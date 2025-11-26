@@ -1,0 +1,51 @@
+# Environments
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+!.env\ copy.example
+.python-version
+
+# Python cache/artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+.pyre/
+.cache/
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+*.manifest
+*.spec
+*.log
+*.tmp
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# Node
+node_modules/
+
+# Editors/OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Project data/output
+cvs/
+cvs_duplicati/
+cv_*.xlsx
+cv_approvati_*.zip
+cv_rifiutati_*.zip
+cvs_parsed*.csv

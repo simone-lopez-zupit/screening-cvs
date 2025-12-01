@@ -1,24 +1,9 @@
-"""
-Pipeline di test per Manatal:
-- legge la colonna "Nuova candidatura" di un job specifico,
-- trova solo il candidato di test (default: "Lorenzo Rivaroli"),
-- lo sposta in "Test preliminare",
-- invia una mail tramite Gmail.
-
-Variabili d'ambiente richieste:
-- MANATAL_API_KEY: token Manatal (formato header: "Token <token>").
-- MANATAL_JOB_ID: ID del job da processare.
-- GMAIL_USER / GMAIL_APP_PASSWORD: credenziali Gmail (app password) per l'invio mail.
-
-Opzioni CLI utili:
---candidate-name, --from-stage, --to-stage, --dry-run per simulare senza aggiornare nulla.
-"""
-
 import argparse
 import os
 import smtplib
 from email.message import EmailMessage
 from pathlib import Path
+import time
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import requests
@@ -155,6 +140,12 @@ def main() -> None:
         action="store_true",
         help="Non spostare né inviare email; stampa solo cosa farebbe.",
     )
+    parser.add_argument(
+        "--pause",
+        type=float,
+        default=0.0,
+        help="Secondi di pausa tra un candidato e il successivo (default: 0).",
+    )
     args = parser.parse_args()
 
     api_key = os.getenv("MANATAL_API_KEY")
@@ -180,11 +171,6 @@ def main() -> None:
         cand_id = int(match["candidate"])
         candidate = fetch_candidate(headers, cand_id)
         selected.append((match, candidate))
-            
-
-    if not selected:
-        print(f"Nessun candidato con nome '{args.candidate_name}' nello stage '{args.from_stage}'.")
-        return
 
     print(f"Da processare: {len(selected)} candidati.")
     gmail_user = os.getenv("GMAIL_USER")
@@ -198,7 +184,7 @@ def main() -> None:
         except FileNotFoundError:
             raise SystemExit("Corpo email mancante: passa --email-body-file o imposta PIPELINE_EMAIL_BODY_FILE.")
 
-    for match, candidate in selected:
+    for idx, (match, candidate) in enumerate(selected, start=1):
         cand_name = str(candidate.get("full_name") or "").strip()
         cand_email = str(candidate.get("email") or "").strip()
         print(f"- Match {match['id']} / candidato {cand_name} ({cand_email or 'email mancante'})")
@@ -218,6 +204,9 @@ def main() -> None:
             print("  Email inviata.")
         else:
             print("  Email NON inviata (credenziali o email mancanti).")
+
+        if args.pause > 0 and idx < len(selected):
+            time.sleep(args.pause)
 
 
 if __name__ == "__main__":

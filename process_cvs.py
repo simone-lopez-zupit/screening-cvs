@@ -28,7 +28,7 @@ SYSTEM_PROMPT = (
 
 USER_PROMPT = (
     "estrarre informazioni strutturate\n"
-    "valutare 4 condizioni con spiegazione e percentuale di affidabilita'\n"
+    "valutare 4 condizioni con spiegazione'\n"
     "determinare se il candidato e' ACCETTATO o RIFIUTATO\n"
     "INFORMAZIONI DA ESTRARRE PER OGNI CV\n"
     "- Nome completo della persona\n"
@@ -38,6 +38,8 @@ USER_PROMPT = (
     "- Telefono\n"
     "- Link LinkedIn (se presente)\n"
     "- Link GitHub (se presente)\n"
+    "- Progetti personali extra-lavorativi citati nel CV (se presenti)\n"
+    "- Esperienze lavorative o formative in settori diversi dallo sviluppo software (se presenti)\n"
     "Se un dato non e' ricavabile lascia la stringa vuota.\n"
     "\n"
     "2. VALUTAZIONE DELLE QUATTRO CONDIZIONI\n"
@@ -51,7 +53,7 @@ USER_PROMPT = (
     "- BOOLEAN: TRUE se NON ha frequentato bootcamp (Boolean Careers, Epicode, 42 School, "
     "Start2Impact, Develhope, Aulab, Ironhack, Le Wagon, ecc.).\n"
     "- ACCENTURE: TRUE se NON ha piu' di 5 anni complessivi in societa' di consulenza IT "
-    "(Almaviva, Reply, Accenture, Engineering, DXC, NTT Data, Capgemini, Everis, Sogeti, ecc.).\n"
+    "(Almaviva, Reply, Accenture, Deloitte, KPMG, Engineering, DXC, NTT Data, Capgemini, Everis, Sogeti, ecc.).\n"
     "- ITALIANO: TRUE se parla italiano come madrelingua o livello molto alto (C1/C2).\n"
     "\n"
     "4. CRITERIO DI ACCETTAZIONE\n"
@@ -67,6 +69,8 @@ USER_PROMPT = (
     '  "phone": "",\n'
     '  "linkedin": "",\n'
     '  "github": "",\n'
+    '  "personal_projects": "",\n'
+    '  "extra_tech": "",\n'
     '  "conditions": {\n'
     '    "eta": {"value": "TRUE|FALSE|NULL", "explanation": ""},\n'
     '    "boolean": {"value": "TRUE|FALSE|NULL", "explanation": ""},\n'
@@ -181,7 +185,7 @@ def move_duplicates(duplicates: Dict[str, List[Path]], target_dir: Path) -> None
 
 def sanitize_fields(raw: Dict[str, Any]) -> Dict[str, str]:
     """Normalizza i campi attesi, condizioni e decisione."""
-    fields = ["full_name", "current_position", "location", "email", "phone", "linkedin", "github"]
+    fields = ["full_name", "current_position", "location", "email", "phone", "linkedin", "github", "personal_projects", "extra_tech"]
     cleaned: Dict[str, str] = {field: (str(raw.get(field, "")) or "").strip() for field in fields}
 
     conditions_block = raw.get("conditions") or {}
@@ -215,6 +219,8 @@ OUTPUT_FIELDS = [
     "phone",
     "linkedin",
     "github",
+    "personal_projects",
+    "extra_tech",
     "eta_value",
     "eta_explanation",
     "boolean_value",
@@ -238,6 +244,7 @@ def write_rows_to_excel(rows: List[Dict[str, str]], output_path: Path, headers: 
     green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
     red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
 
+    print(f"Excel rows number: {len(rows)}\n")
     for row in rows:
         ws.append([row.get(field, "") for field in headers])
         current_row = ws.max_row

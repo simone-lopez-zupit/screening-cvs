@@ -87,7 +87,7 @@ def call_model_with_pdf_file(client: OpenAI, pdf_path: Path, model: str) -> Dict
     """
     Legge il PDF, lo codifica in base64 e lo passa al modello
     tramite Chat Completions API usando il tipo di contenuto 'file'.
-    Il modello e' forzato a rispondere in JSON tramite response_format.
+    Il modello é forzato a rispondere in JSON tramite response_format.
     """
     # sono riuscito a mandarlo solo in base64 vabbu
     with pdf_path.open("rb") as f:

@@ -73,7 +73,7 @@ def fetch_job_matches(
                 continue
             matches.append(match)
         url = absolute_url(data.get("next"))
-    return matches
+    return matches[:24]
 
 
 def fetch_candidate(headers: Dict[str, str], candidate_id: int) -> Dict[str, object]:
@@ -113,7 +113,7 @@ def send_gmail(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Pipeline di test Manatal -> stage + email Gmail.")
-    parser.add_argument("--job-id", help="ID del job Manatal (fallback: MANATAL_JOB_ID).")
+    parser.add_argument("--job-id", help="ID del job Manatal (fallback: MANATAL_JOB_DEV_ID).")
 
     parser.add_argument(
         "--from-stage",
@@ -127,13 +127,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--email-subject",
-        default=os.getenv("PIPELINE_EMAIL_SUBJECT", "Step successivo: test preliminare"),
+        default=os.getenv("PIPELINE_EMAIL_SUBJECT", "Candidatura Zupit"),
         help="Oggetto dell'email da inviare.",
     )
     parser.add_argument(
         "--email-body-file",
-        default=os.getenv("PIPELINE_EMAIL_BODY_FILE"),
-        help="Percorso del file di testo per il corpo email (UTF-8). Se non impostato, usa env PIPELINE_EMAIL_BODY.",
+        default=os.getenv("SEND_TEST_EMAIL_BODY_FILE"),
+        help="Percorso del file di testo per il corpo email (UTF-8). Se non impostato, usa env SEND_TEST_EMAIL_BODY_FILE.",
     )
     parser.add_argument(
         "--dry-run",
@@ -151,9 +151,9 @@ def main() -> None:
     api_key = os.getenv("MANATAL_API_KEY")
     if not api_key:
         raise SystemExit("MANATAL_API_KEY mancante.")
-    job_id = args.job_id or os.getenv("MANATAL_JOB_ID")
+    job_id = args.job_id or os.getenv("MANATAL_JOB_DEV_ID")
     if not job_id:
-        raise SystemExit("MANATAL_JOB_ID mancante.")
+        raise SystemExit("MANATAL_JOB_DEV_ID mancante.")
 
     headers = build_headers(api_key)
     stage_map = fetch_stage_ids(headers, [args.from_stage, args.to_stage])
@@ -163,7 +163,7 @@ def main() -> None:
         raise SystemExit(f"Stage non trovati: {stage_map}")
 
     print(f"Cerco match in '{args.from_stage}' per job {job_id}...")
-    matches = fetch_job_matches(headers, job_id, from_stage_id, stage_name=args.from_stage,page_size=800)
+    matches = fetch_job_matches(headers, job_id, from_stage_id, stage_name=args.from_stage,page_size=200)
     print(f"Trovati {len(matches)} match nello stage di origine.")
 
     selected: List[Tuple[Dict[str, object], Dict[str, object]]] = []
@@ -184,22 +184,61 @@ def main() -> None:
         except FileNotFoundError:
             raise SystemExit("Corpo email mancante: passa --email-body-file o imposta PIPELINE_EMAIL_BODY_FILE.")
 
+    xamarin_names_list = [
+        "Hipolyto Obeso Huerta",
+        "Abderaouf DAIFFI",
+        "Marian Hristov",
+        "Eya BEN DLALA",
+        "Ivan Sofian",
+        "Grzegorz Szymański",
+        "Nikhil Sathawara",
+        "Othmane Jabbar",
+        "Thiago Henrique Pereira",
+        "Romali Patil",
+        "Ronak Shetiya",
+        "Sapna Solanki",
+        "Usama Nasir",
+        "Vivek Negi",
+        "Antonio Ceppellini",
+        "Riccardo Pirani",
+        "Nicola Dal Torrione",
+        "Edoardo Cagnes",
+        "Francesco Griffa",
+        "Emiliano Calicchia",
+        "Daniele Marinangeli",
+        "Nardin Pierangelo",
+        "Nigal Ranieri",
+        "Nilanke Clifford Abeydeera",
+        "Andrea Volterrani",
+        "Mouad Oudra",
+        "Nicolò Giani",
+        "Andro Gabra",
+        "Edoardo Davide Casati",
+        "Massimo Murari",
+        "Silvia Zancanella"
+    ]
+
     for idx, (match, candidate) in enumerate(selected, start=1):
-        cand_name = str(candidate.get("full_name") or "").strip()
+        cand_fullname = str(candidate.get("full_name") or "").strip().title()
+        cand_first_name = cand_fullname.split()[0] if cand_fullname else ""
+
+        if cand_fullname in xamarin_names_list:
+            continue
+
         cand_email = str(candidate.get("email") or "").strip()
-        print(f"- Match {match['id']} / candidato {cand_name} ({cand_email or 'email mancante'})")
+        print(f"- Match {match['id']} / candidato #{idx} - {cand_fullname} ({cand_email or '!!! EMAIL MANCANTE !!!'})")
 
         if args.dry_run:
             print("  DRY-RUN: salto move+email. Per il seguente candidato:")
             print("cand email: " + cand_email)
-            print("cand name: " + cand_name)
+            print("cand name: " + cand_fullname)
             continue
 
         move_match(headers, int(match["id"]), to_stage_id)
         print(f"  Spostato in '{args.to_stage}'.")
 
         if gmail_user and gmail_app_password and cand_email:
-            body = body_template.format(name=cand_name)
+            body = body_template.format(name=cand_first_name)
             send_gmail(gmail_user, gmail_app_password, cand_email, subject, body)
             print("  Email inviata.")
         else:

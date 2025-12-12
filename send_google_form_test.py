@@ -64,7 +64,7 @@ def fetch_job_matches(
         resp.raise_for_status()
         data = resp.json()
         for match in data.get("results", []):
-            stage = match.get("stage") or {}
+            stage = match.get("job_pipeline_stage") or {}
             if int(stage.get("id", -1)) != stage_id:
                 continue
             if stage_name and str(stage.get("name") or "").strip().lower() != stage_name.strip().lower():
@@ -83,7 +83,7 @@ def fetch_candidate(headers: Dict[str, str], candidate_id: int) -> Dict[str, obj
 
 
 def move_match(headers: Dict[str, str], match_id: int, stage_id: int) -> None:
-    payload = {"stage": {"id": stage_id}}
+    payload = {"job_pipeline_stage": {"id": stage_id}}
     resp = requests.patch(
         f"{API_BASE}/matches/{match_id}/",
         headers=headers,
@@ -163,7 +163,7 @@ def main() -> None:
         raise SystemExit(f"Stage non trovati: {stage_map}")
 
     print(f"Cerco match in '{args.from_stage}' per job {job_id}...")
-    matches = fetch_job_matches(headers, job_id, from_stage_id, stage_name=args.from_stage,page_size=200)
+    matches = fetch_job_matches(headers, job_id, from_stage_id, stage_name=args.from_stage, page_size=200)
     print(f"Trovati {len(matches)} match nello stage di origine.")
 
     selected: List[Tuple[Dict[str, object], Dict[str, object]]] = []

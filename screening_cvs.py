@@ -7,6 +7,7 @@ import argparse
 import base64
 import hashlib
 import json
+import os
 import shutil
 import time
 import zipfile
@@ -14,10 +15,23 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import requests
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill
 from openai import OpenAI
 from dotenv import load_dotenv
+
+
+load_dotenv()
+
+API_BASE = "https://api.manatal.com/open/v3"
+
+
+def build_headers(raw_token: str) -> Dict[str, str]:
+    token = raw_token.strip()
+    if not token.lower().startswith("token "):
+        token = f"Token {token}"
+    return {"Authorization": token, "Content-Type": "application/json"}
 
 
 SYSTEM_PROMPT = (
@@ -28,37 +42,38 @@ SYSTEM_PROMPT = (
 
 USER_PROMPT = (
     "estrarre informazioni strutturate\n"
-    "valutare 4 condizioni con spiegazione'\n"
-    "determinare se il candidato e' ACCETTATO o RIFIUTATO\n"
+    "valutare 4 condizioni con spiegazione\n"
+    "determinare se il candidato é ACCETTATO o RIFIUTATO\n"
     "INFORMAZIONI DA ESTRARRE PER OGNI CV\n"
     "- Nome completo della persona\n"
     "- Posizione lavorativa attuale\n"
-    "- Luogo di residenza / citta'\n"
+    "- Luogo di residenza / città\n"
     "- Email\n"
     "- Telefono\n"
     "- Link LinkedIn (se presente)\n"
     "- Link GitHub (se presente)\n"
     "- Progetti personali extra-lavorativi citati nel CV (se presenti)\n"
     "- Esperienze lavorative o formative in settori diversi dallo sviluppo software (se presenti)\n"
-    "Se un dato non e' ricavabile lascia la stringa vuota.\n"
+    "- Se ha almeno 3 anni di esperienza fullstack nello sviluppo web\n"
+    "Se un dato non é ricavabile lascia la stringa vuota.\n"
     "\n"
     "2. VALUTAZIONE DELLE QUATTRO CONDIZIONI\n"
     "Per ciascuna condizione restituisci value, spiegazione:\n"
     "value: TRUE se verificata, FALSE se non verificata, NULL se non determinabile.\n"
-    "spiegazione: descrivi esattamente come sei arrivato alla valutazione (testo trovato, "
-    "assunzioni, deduzioni ecc.).\n"
+    "spiegazione: descrivi esattamente come sei arrivato alla valutazione (testo trovato,assunzioni,deduzioni ecc.).\n"
     "\n"
     "3. DEFINIZIONE DELLE CONDIZIONI\n"
-    "- ETA: TRUE se la persona NON ha piu' di 45 anni.\n"
+    "- ETA: TRUE se la persona NON ha più di 45 anni.\n"
     "- BOOLEAN: TRUE se NON ha frequentato bootcamp (Boolean Careers, Epicode, 42 School, "
     "Start2Impact, Develhope, Aulab, Ironhack, Le Wagon, ecc.).\n"
-    "- ACCENTURE: TRUE se NON ha piu' di 5 anni complessivi in societa' di consulenza IT "
-    "(Almaviva, Reply, Accenture, Deloitte, KPMG, Engineering, DXC, NTT Data, Capgemini, Everis, Sogeti, ecc.).\n"
-    "- ITALIANO: TRUE se parla italiano come madrelingua o livello molto alto (C1/C2).\n"
+    "- ACCENTURE: TRUE se NON ha più di 5 anni complessivi in società di consulenza IT "
+    "(Almaviva,Almawave,Reply,Accenture,Deloitte,KPMG,Engineering,DXC,NTT Data,Capgemini,Everis,Sogeti).\n"
+    "- ITALIANO: TRUE se parla italiano come madrelingua o livello molto alto (C1/C2). "
+    "FALSE: se il curriculum non è in italiano e se c'è menzione che sa altre lingue e non l'italiano >= C2\n"
     "\n"
     "4. CRITERIO DI ACCETTAZIONE\n"
-    "Decisione ACCETTATO se nessuna condizione e' FALSE (possono essere TRUE o NULL). "
-    "Decisione RIFIUTATO se almeno una condizione e' FALSE.\n"
+    "Decisione ACCETTATO se nessuna condizione é FALSE (possono essere TRUE o NULL). "
+    "Decisione RIFIUTATO se almeno una condizione é FALSE.\n"
     "\n"
     "Restituisci un oggetto JSON con questa struttura:\n"
     "{\n"
@@ -71,6 +86,7 @@ USER_PROMPT = (
     '  "github": "",\n'
     '  "personal_projects": "",\n'
     '  "extra_tech": "",\n'
+    '  "3y_exp_web": "",\n'
     '  "conditions": {\n'
     '    "eta": {"value": "TRUE|FALSE|NULL", "explanation": ""},\n'
     '    "boolean": {"value": "TRUE|FALSE|NULL", "explanation": ""},\n'
@@ -173,6 +189,35 @@ def _unique_destination(dest_dir: Path, original_name: str) -> Path:
         counter += 1
 
 
+def get_candidate_info(headers: Dict[str, str], email: str):
+    url_candidates: Optional[str] = f"{API_BASE}/candidates/?email={email}"
+
+    resp = requests.get(url_candidates, headers=headers, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+
+    candidates = data.get("results", [])
+
+    base_link = "app.manatal.com/candidates/"
+
+    if len(candidates) == 0:
+        return "", ""
+    if len(candidates) > 1:
+        return "SISTEMARE", "DUPLICATI"
+
+    cand_id = candidates[0].get("id")
+    url_matches: Optional[str] = f"{API_BASE}/candidates/{cand_id}/matches/"
+
+    resp = requests.get(url_matches, headers=headers, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    matches = data.get("results", [])
+
+    matches = (f"{match.get('stage').get("name")}" for match in matches)
+
+    return f"=HYPERLINK(\"{base_link}{cand_id}\")", "&CHAR(10)&".join(matches)
+
+
 def move_duplicates(duplicates: Dict[str, List[Path]], target_dir: Path) -> None:
     """Sposta tutti i duplicati (tranne il primo di ogni gruppo) nella cartella target."""
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -185,7 +230,7 @@ def move_duplicates(duplicates: Dict[str, List[Path]], target_dir: Path) -> None
 
 def sanitize_fields(raw: Dict[str, Any]) -> Dict[str, str]:
     """Normalizza i campi attesi, condizioni e decisione."""
-    fields = ["full_name", "current_position", "location", "email", "phone", "linkedin", "github", "personal_projects", "extra_tech"]
+    fields = ["full_name", "current_position", "location", "email", "phone", "linkedin", "github", "personal_projects", "extra_tech", "3y_exp_web"]
     cleaned: Dict[str, str] = {field: (str(raw.get(field, "")) or "").strip() for field in fields}
 
     conditions_block = raw.get("conditions") or {}
@@ -221,6 +266,7 @@ OUTPUT_FIELDS = [
     "github",
     "personal_projects",
     "extra_tech",
+    "3y_exp_web",
     "eta_value",
     "eta_explanation",
     "boolean_value",
@@ -230,6 +276,7 @@ OUTPUT_FIELDS = [
     "italiano_value",
     "italiano_explanation",
     "decision",
+    "manatal_link",
     "note",
 ]
 
@@ -266,6 +313,7 @@ def create_zip(zip_path: Path, files: List[Path]) -> None:
 
 
 def process_directory(
+    headers: Dict[str, str],
     input_dir: Path,
     model: str,
     pause: float,
@@ -280,7 +328,7 @@ def process_directory(
     for idx, pdf_path in enumerate(files, start=1):
         print(f"[{idx}/{len(files)}] Lavoro su: {pdf_path.name}")
         note = ""
-        data: Dict[str, str] = {}
+
         try:
             raw = call_model_with_pdf_file(client, pdf_path, model)
             data = sanitize_fields(raw)
@@ -288,7 +336,13 @@ def process_directory(
             note = f"errore: {exc}"
             data = sanitize_fields({})
 
-        row = {"file_name": pdf_path.name, **data, "note": note}
+        cand_email = raw.get("email")
+        if cand_email:
+            manatal_link, manatal_matches = get_candidate_info(headers, cand_email)
+        else:
+            manatal_link, manatal_matches = "", ""
+
+        row = {"file_name": pdf_path.name, **data, "manatal_link": manatal_link, "note": note}
         rows.append(row)
 
         if pause > 0 and idx < len(files):
@@ -331,6 +385,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    api_key = os.getenv("MANATAL_API_KEY")
+    if not api_key:
+        raise SystemExit("MANATAL_API_KEY mancante.")
+
+    headers = build_headers(api_key)
+
     input_dir = Path(args.input_dir)
     if not input_dir.is_dir():
         raise SystemExit(f"Cartella di input non trovata: {input_dir}")
@@ -348,32 +408,42 @@ def main() -> None:
     else:
         print("Nessun duplicato trovato.")
 
-    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     rows = process_directory(
+        headers=headers,
         input_dir=input_dir,
         model=args.model,
         pause=args.pause,
-        limit=args.limit,
+        limit=args.limit
     )
+
+    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     excel_path = Path(f"cv_{timestamp_str}.xlsx")
     write_rows_to_excel(rows, output_path=excel_path, headers=OUTPUT_FIELDS)
     print(f"Excel salvato in: {excel_path}")
 
+    in_manatal_files: List[Path] = []
     accepted_files: List[Path] = []
     rejected_files: List[Path] = []
+
     for row in rows:
+        in_manatal = True if row["manatal_link"] != "" else False
         decision = (row.get("decision") or "").upper()
         pdf_path = input_dir / row.get("file_name", "")
-        if decision == "ACCETTATO":
+        if in_manatal:
+            in_manatal_files.append(pdf_path)
+        elif decision == "ACCETTATO":
             accepted_files.append(pdf_path)
         elif decision == "RIFIUTATO":
             rejected_files.append(pdf_path)
 
+    zip_manatal_path = Path(f"cv_manatal_{timestamp_str}.zip")
     zip_accept_path = Path(f"cv_approvati_{timestamp_str}.zip")
     zip_reject_path = Path(f"cv_rifiutati_{timestamp_str}.zip")
+    create_zip(zip_manatal_path, in_manatal_files)
     create_zip(zip_accept_path, accepted_files)
     create_zip(zip_reject_path, rejected_files)
+    print(f"Zip MANATAL: {zip_manatal_path}")
     print(f"Zip ACCETTATI: {zip_accept_path}")
     print(f"Zip RIFIUTATI: {zip_reject_path}")
 

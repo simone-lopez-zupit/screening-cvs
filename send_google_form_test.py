@@ -34,7 +34,7 @@ def fetch_stage_ids(headers: Dict[str, str], stage_names: Iterable[str]) -> Dict
     wanted = {name.lower(): name for name in stage_names}
     found: Dict[str, int] = {}
 
-    url: Optional[str] = f"{API_BASE}/match-stages/"
+    url: Optional[str] = f"{API_BASE}/match-stages/?page_size=200"
     while url:
         resp = requests.get(url, headers=headers, timeout=30)
         resp.raise_for_status()
@@ -64,7 +64,7 @@ def fetch_job_matches(
         resp.raise_for_status()
         data = resp.json()
         for match in data.get("results", []):
-            stage = match.get("job_pipeline_stage") or {}
+            stage = match.get("stage") or {}
             if int(stage.get("id", -1)) != stage_id:
                 continue
             if stage_name and str(stage.get("name") or "").strip().lower() != stage_name.strip().lower():
@@ -73,7 +73,7 @@ def fetch_job_matches(
                 continue
             matches.append(match)
         url = absolute_url(data.get("next"))
-    return matches[:24]
+    return matches[:20]
 
 
 def fetch_candidate(headers: Dict[str, str], candidate_id: int) -> Dict[str, object]:
@@ -83,7 +83,7 @@ def fetch_candidate(headers: Dict[str, str], candidate_id: int) -> Dict[str, obj
 
 
 def move_match(headers: Dict[str, str], match_id: int, stage_id: int) -> None:
-    payload = {"job_pipeline_stage": {"id": stage_id}}
+    payload = {"stage": {"id": stage_id}}
     resp = requests.patch(
         f"{API_BASE}/matches/{match_id}/",
         headers=headers,
@@ -184,46 +184,9 @@ def main() -> None:
         except FileNotFoundError:
             raise SystemExit("Corpo email mancante: passa --email-body-file o imposta PIPELINE_EMAIL_BODY_FILE.")
 
-    xamarin_names_list = [
-        "Hipolyto Obeso Huerta",
-        "Abderaouf DAIFFI",
-        "Marian Hristov",
-        "Eya BEN DLALA",
-        "Ivan Sofian",
-        "Grzegorz Szymański",
-        "Nikhil Sathawara",
-        "Othmane Jabbar",
-        "Thiago Henrique Pereira",
-        "Romali Patil",
-        "Ronak Shetiya",
-        "Sapna Solanki",
-        "Usama Nasir",
-        "Vivek Negi",
-        "Antonio Ceppellini",
-        "Riccardo Pirani",
-        "Nicola Dal Torrione",
-        "Edoardo Cagnes",
-        "Francesco Griffa",
-        "Emiliano Calicchia",
-        "Daniele Marinangeli",
-        "Nardin Pierangelo",
-        "Nigal Ranieri",
-        "Nilanke Clifford Abeydeera",
-        "Andrea Volterrani",
-        "Mouad Oudra",
-        "Nicolò Giani",
-        "Andro Gabra",
-        "Edoardo Davide Casati",
-        "Massimo Murari",
-        "Silvia Zancanella"
-    ]
-
     for idx, (match, candidate) in enumerate(selected, start=1):
         cand_fullname = str(candidate.get("full_name") or "").strip().title()
         cand_first_name = cand_fullname.split()[0] if cand_fullname else ""
-
-        if cand_fullname in xamarin_names_list:
-            continue
 
         cand_email = str(candidate.get("email") or "").strip()
         print(f"- Match {match['id']} / candidato #{idx} - {cand_fullname} ({cand_email or '!!! EMAIL MANCANTE !!!'})")

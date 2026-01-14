@@ -135,17 +135,6 @@ def main() -> None:
         default=os.getenv("SEND_TEST_EMAIL_BODY_FILE"),
         help="Percorso del file di testo per il corpo email (UTF-8). Se non impostato, usa env SEND_TEST_EMAIL_BODY_FILE.",
     )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Non spostare né inviare email; stampa solo cosa farebbe.",
-    )
-    parser.add_argument(
-        "--pause",
-        type=float,
-        default=0.0,
-        help="Secondi di pausa tra un candidato e il successivo (default: 0).",
-    )
     args = parser.parse_args()
 
     api_key = os.getenv("MANATAL_API_KEY")
@@ -191,12 +180,6 @@ def main() -> None:
         cand_email = str(candidate.get("email") or "").strip()
         print(f"- Match {match['id']} / candidato #{idx} - {cand_fullname} ({cand_email or '!!! EMAIL MANCANTE !!!'})")
 
-        if args.dry_run:
-            print("  DRY-RUN: salto move+email. Per il seguente candidato:")
-            print("cand email: " + cand_email)
-            print("cand name: " + cand_fullname)
-            continue
-
         move_match(headers, int(match["id"]), to_stage_id)
         print(f"  Spostato in '{args.to_stage}'.")
 
@@ -207,8 +190,7 @@ def main() -> None:
         else:
             print("  Email NON inviata (credenziali o email mancanti).")
 
-        if args.pause > 0 and idx < len(selected):
-            time.sleep(args.pause)
+        time.sleep(78)
 
 
 if __name__ == "__main__":

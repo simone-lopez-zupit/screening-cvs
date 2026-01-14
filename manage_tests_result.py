@@ -1,9 +1,11 @@
 import argparse
 import os
 import smtplib
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timedelta
 from email.message import EmailMessage
 import time
+from ftplib import all_errors
 from pathlib import Path
 
 import pandas as pd
@@ -48,9 +50,23 @@ def fetch_stage_ids(headers: Dict[str, str], stage_names: Iterable[str]) -> Dict
             if key in wanted and wanted[key] not in found:
                 found[wanted[key]] = int(stage["id"])
         url = absolute_url(data.get("next"))
-        time.sleep(5)
 
     return found
+
+
+def get_job_matches(headers: Dict[str, str]) -> List[Dict[str, object]]:
+    all_matches = []
+    url = f"{API_BASE}/matches/?page_size=200"
+
+    index = 0
+    while index == 0 and url:
+        index += 1
+        resp = requests.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        all_matches.extend(data["results"])
+        url = data.get("next")
+    return all_matches
 
 
 def fetch_job_matches(
@@ -80,6 +96,19 @@ def fetch_job_matches(
         url = absolute_url(data.get("next"))
 
     return matches
+
+
+def fetch_candidates(headers: Dict[str, str]) -> List[Dict[str, object]]:
+    all_candidates = []
+    url = f"{API_BASE}/candidates/?page_size=200"  # Paginate efficiently
+
+    while url:
+        resp = requests.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        all_candidates.extend(data["results"])
+        url = data.get("next")
+    return all_candidates
 
 
 def fetch_candidate(headers: Dict[str, str], candidate_id: int) -> Dict[str, object]:
@@ -138,9 +167,9 @@ def format_excel(input_path: str):
     )
     df["score"] = df["score"] * 100
 
-    df["state"] = "DA VALUTARE"
-    df.loc[df["score"] >= 80, "state"] = "PASSATO"
-    df.loc[df["score"] < 70, "state"] = "FALLITO"
+    df["outcome"] = "DA VALUTARE"
+    df.loc[df["score"] >= 80, "outcome"] = "PASSATO"
+    df.loc[df["score"] <= 60, "outcome"] = "FALLITO"
 
     dt = pd.to_datetime(df["Total Time\nUsed"], errors="coerce")
 
@@ -154,14 +183,16 @@ def format_excel(input_path: str):
 
     df = df.rename(columns={
         'Test': 'name',
-        'Email': 'email'
+        'Email': 'email',
+        'Test\nStatus': 'status',
     })
 
     df = df[[
         "name",
         "email",
         "score",
-        "state",
+        "status",
+        "outcome",
         "time_used",
         "last_activity_date"
     ]]
@@ -217,59 +248,58 @@ def get_manatal_credentials(job_id_arg: Optional[str]) -> tuple[str, str]:
     return api_key, job_id
 
 
+def parse_match_datetime(date_str: str) -> datetime:
+    """Parse ISO 8601 con Z → naive datetime."""
+    if date_str.endswith('Z'):
+        date_str = date_str[:-1] + '+00:00'
+    return datetime.fromisoformat(date_str).replace(tzinfo=None)
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Pipeline di test Manatal -> test preliminare add notes.")
     parser.add_argument("--job-id", help="ID del job Manatal (fallback: MANATAL_JOB_DEV_ID).")
 
-    parser.add_argument(
-        "--from-stage",
-        default=os.getenv("MANATAL_STAGE_FROM", "Test preliminare"),
-        help='Nome dello stage di origine (default: "Test preliminare").',
-    )
-    parser.add_argument(
-        "--to-stage",
-        default=os.getenv("MANATAL_STAGE_TO", "Chiacchierata conoscitiva"),
-        help='Nome dello stage di destinazione (default: "Chiacchierata conoscitiva").',
-    )
-    parser.add_argument(
-        "--email-subject",
-        default=os.getenv("PIPELINE_EMAIL_SUBJECT", "Candidatura Zupit"),
-        help="Oggetto dell'email da inviare.",
-    )
+    # GMAIL
+    gmail_user = os.getenv("GMAIL_USER")
+    gmail_app_password = os.getenv("GMAIL_APP_PASSWORD")
+
+    # EMAIL
+    email_subject = "Candidatura Zupit"
     parser.add_argument(
         "--email-drop-body-file",
-        default=os.getenv("DROP_EMAIL_BODY_FILE"),
-        help="Percorso del file di testo per il corpo email (UTF-8). Se non impostato, usa env DROP_EMAIL_BODY_FILE.",
+        default=os.getenv("DROP_EMAIL_BODY_FILE")
     )
     parser.add_argument(
         "--email-chiacchierata-body-file",
-        default=os.getenv("SEND_CHIACCHIERATA_EMAIL_BODY_FILE"),
-        help="Percorso del file di testo per il corpo email (UTF-8). Se non impostato, usa env SEND_CHIACCHIERATA_EMAIL_BODY_FILE.",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Non spostare né inviare email; stampa solo cosa farebbe.",
-    )
-    parser.add_argument(
-        "--pause",
-        type=float,
-        default=2.0,
-        help="Secondi di pausa tra un candidato e il successivo (default: 0).",
+        default=os.getenv("SEND_CHIACCHIERATA_EMAIL_BODY_FILE")
     )
     args = parser.parse_args()
 
+    body_chiacchierata_template_path = args.email_chiacchierata_body_file
+    body_chiacchierata_template: Optional[str] = None
+    if body_chiacchierata_template_path:
+        try:
+            body_chiacchierata_template = Path(body_chiacchierata_template_path).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            raise SystemExit("Corpo email mancante: passa --email-body-file o imposta PIPELINE_EMAIL_BODY_FILE.")
+
+    body_drop_template_path = args.email_drop_body_file
+    body_drop_template: Optional[str] = None
+    if body_drop_template_path:
+        try:
+            body_drop_template = Path(body_drop_template_path).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            raise SystemExit("Corpo email mancante: passa --email-body-file o imposta PIPELINE_EMAIL_BODY_FILE.")
+
+    # MANATAL
+    from_stage = "Test preliminare"
+    to_stage = "Chiacchierata conoscitiva"
     api_key, job_id = get_manatal_credentials(args.job_id)
     headers = build_headers(api_key)
 
     print(f"Getting map stages...")
-    stage_map = fetch_stage_ids(headers, [args.from_stage, args.to_stage])
+    stage_map = fetch_stage_ids(headers, [from_stage, to_stage])
     from_stage_id = stage_map.get(args.from_stage)
     to_stage_id = stage_map.get(args.to_stage)
-    if from_stage_id is None:
-        raise SystemExit(f"Stage non trovato: {stage_map}")
-    if to_stage_id is None:
-        raise SystemExit(f"Stage non trovato: {stage_map}")
 
     print(f"Cerco match in '{args.from_stage}' per job {job_id}...")
     matches = fetch_job_matches(headers, job_id, from_stage_id, stage_name=args.from_stage, page_size=200)
@@ -281,12 +311,149 @@ def main() -> None:
         cand_id = int(match["candidate"])
         candidate = fetch_candidate(headers, cand_id)
         selected.append((match, candidate))
-        time.sleep(1)
+        time.sleep(.5)
 
-    print(f"Da processare: {len(selected)} test.")
+    # QUI PRENDIAMO I DATI DA API TESTDOME
+    df = format_excel("testDome.xlsx")
+
+    # Passato, fallito
+    for idx, (match, candidate) in enumerate(selected, start=1):
+        cand_fullname = str(candidate.get("full_name") or "").strip().title()
+        cand_first_name = cand_fullname.split()[0] if cand_fullname else ""
+        match_id = int(match.get("id"))
+        cand_email = str(candidate.get("email") or "").strip()
+
+        # prendi l'email del match e cerca il TEST
+
+        # SE NE TROVI 0
+        #   PASSATE <= 2 settimane --> reminder
+        #   PASSATE > 2 settimane --> drop
+
+        # SE NE TROVI >1 --> raccogli le email
+
+        # SE NE TROVI 1
+
+
+        test_df = df[df["email"] == cand_email]
+
+        print(f"{cand_fullname} | email: {cand_email}")
+
+        test_count = len(test_df)
+
+        if test_count == 0:
+            print("  Test non ancora fatto")
+            continue
+        if test_count >= 2:
+            print(f"  {test_count} test con email: {cand_email} --> non faccio nulla")
+            continue
+
+        test = test_df.iloc[0]
+
+        # MANCA IL LINK AL TEST
+        test_name = test["name"]
+        test_score = test["score"]
+        test_time_used = test["time_used"]
+        test_outcome = test["outcome"]
+        test_status = test["status"]
+        test_last_activity = test["last_activity_date"]
+        test_link = ""
+
+        print(f"  Test: {test_name}  |  Score: {test_score}/100  |  ({test_time_used}) - {test_last_activity}")
+
+        if test_status in ("Started", "Invited"):
+            print(f"  Status: {test_status} --> continue")
+            continue
+
+        if pd.isna(test_score) or test_score == 0:
+            print(f"  Score: 0 --> continue")
+            continue
+
+        if not has_testdome_note(match_id, headers=headers):
+            note_text = (
+                f"Testdome: {test_score}% {test_name} {test_time_used}\n"
+                f"{test_outcome}"
+            )
+
+            url: Optional[str] = f"{API_BASE}/matches/{match_id}/notes/"
+            response = requests.post(url, json={"info": note_text}, headers=headers)
+            response.raise_for_status()
+
+        if test_outcome == "PASSATO":
+            print("  Test passato")
+            move_match(headers, match_id, to_stage_id)
+            print(f"  Spostato in '{to_stage}'.")
+
+            if gmail_user and gmail_app_password and cand_email:
+                body = body_chiacchierata_template.format(name=cand_first_name)
+                send_gmail(gmail_user, gmail_app_password, cand_email, email_subject, body)
+                time.sleep(125)
+                print("  Email chiacchierata inviata.")
+            else:
+                print("  Email NON inviata (credenziali o email mancanti).")
+
+        if test_outcome == "DA VALUTARE":
+            print(f"  Score: {test_score}  |  Test: {test_name}  |  Time: {test_time_used}")
+
+        if test_outcome == "FALLITO":
+            print("  Test fallito")
+            drop_candidate(headers, int(match_id))
+            print(f"  Candidato droppato.")
+
+            if gmail_user and gmail_app_password and cand_email:
+                body = body_drop_template.format(name=cand_first_name)
+                send_gmail(gmail_user, gmail_app_password, cand_email, email_subject, body)
+                time.sleep(125)
+                print("  Email drop inviata.")
+            else:
+                print("  Email NON inviata (credenziali o email mancanti).")
+
+
+# APPUNTI
+"""
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Pipeline di test Manatal -> test preliminare add notes.")
+    parser.add_argument("--job-id", help="ID del job Manatal (fallback: MANATAL_JOB_DEV_ID).")
+
+    # GMAIL
     gmail_user = os.getenv("GMAIL_USER")
     gmail_app_password = os.getenv("GMAIL_APP_PASSWORD")
-    subject = args.email_subject
+
+    # EMAIL
+    email_subject = "Candidatura Zupit"
+    parser.add_argument(
+        "--email-drop-body-file",
+        default=os.getenv("DROP_EMAIL_BODY_FILE")
+    )
+    parser.add_argument(
+        "--email-chiacchierata-body-file",
+        default=os.getenv("SEND_CHIACCHIERATA_EMAIL_BODY_FILE")
+    )
+    args = parser.parse_args()
+
+    # MANATAL
+    from_stage = "Test preliminare"
+    to_stage = "Chiacchierata conoscitiva"
+    api_key, job_id = get_manatal_credentials(args.job_id)
+    headers = build_headers(api_key)
+
+    print(f"Getting map stages...")
+    stage_map = fetch_stage_ids(headers, [from_stage, to_stage])
+    from_stage_id = stage_map.get(args.from_stage)
+    to_stage_id = stage_map.get(args.to_stage)
+
+    print(f"Cerco match in '{args.from_stage}' per job {job_id}...")
+    matches = fetch_job_matches(headers, job_id, from_stage_id, stage_name=args.from_stage, page_size=200)
+    print(f"Trovati {len(matches)} match nello stage di origine.")
+
+    print(f"Getting candidates...")
+    selected: List[Tuple[Dict[str, object], Dict[str, object]]] = []
+    for match in matches:
+        cand_id = int(match["candidate"])
+        candidate = fetch_candidate(headers, cand_id)
+        selected.append((match, candidate))
+        time.sleep(.5)
+
+    print(f"Da processare: {len(selected)} test.")
 
     body_drop_template_path = args.email_drop_body_file
     body_drop_template: Optional[str] = None
@@ -296,6 +463,8 @@ def main() -> None:
         except FileNotFoundError:
             raise SystemExit("Corpo email mancante: passa --email-body-file o imposta PIPELINE_EMAIL_BODY_FILE.")
 
+
+
     body_chiacchierata_template_path = args.email_chiacchierata_body_file
     body_chiacchierata_template: Optional[str] = None
     if body_chiacchierata_template_path:
@@ -304,7 +473,15 @@ def main() -> None:
         except FileNotFoundError:
             raise SystemExit("Corpo email mancante: passa --email-body-file o imposta PIPELINE_EMAIL_BODY_FILE.")
 
+    reminder_email(parser, args, selected)
+
+
     df = format_excel("testDome.xlsx")
+
+
+
+
+
 
     for idx, (match, candidate) in enumerate(selected, start=1):
 
@@ -312,17 +489,39 @@ def main() -> None:
 
         cand_fullname = str(candidate.get("full_name") or "").strip().title()
         cand_first_name = cand_fullname.split()[0] if cand_fullname else ""
-        match_id = int(match["id"])
+        match_id = int(match.get("id"))
+        match_updated_at = parse_match_datetime(match.get("updated_at"))
         cand_email = str(candidate.get("email") or "").strip()
         test_df = df[df["email"] == cand_email]
 
+        print(f"{cand_fullname} | email: {cand_email}")
+
         test_count = len(test_df)
 
+        # CHI NON RISPONDE DA TANTO droppiamo
+        
         if test_count == 0: # vuol dire che non ha ancora cliccato il link,
             print(f"Candidato con email: {cand_email} non ha aperto il test --> non faccio nulla")
+
+            if match_updated_at < (datetime.now() - timedelta(days=20)):
+                url: Optional[str] = f"{API_BASE}/matches/{match_id}/notes/"
+                response = requests.post(url, json={"info": "Candidato non ha svolto il test che è scaduto"}, headers=headers)
+                response.raise_for_status()
+
+                drop_candidate(headers, int(match_id))
+                print(f"  Candidato droppato per non aver fatto il test")
+
             # TO DO controllare data spostamento colonna e droppare se > di 1 mese con nota "Non ha cliccato il link del test"
             continue
         elif test_count > 2:
+            print(f"{test_count} test con email: {cand_email} --> non faccio nulla")
+            continue
+        
+
+        if test_count == 0:
+            print(f"test non trovato con email: {cand_email} --> non faccio nulla")
+            continue
+        if test_count >= 2:
             print(f"{test_count} test con email: {cand_email} --> non faccio nulla")
             continue
 
@@ -331,7 +530,8 @@ def main() -> None:
         test_name = test["name"]
         test_score = test["score"]
         test_time_used = test["time_used"]
-        test_state = test["state"]
+        test_outcome = test["outcome"]
+        test_status = test["status"]
         test_last_activity = test["last_activity_date"]
         test_sent_more_than_20_days_ago = is_before_one_month_ago(test_last_activity)
 
@@ -339,26 +539,30 @@ def main() -> None:
         print(f"{test_name}")
         print(f"{test_score}/100 | ({test_time_used}) - {test_last_activity}")
 
+        if test_status == "Started" or test_status == "Invited":
+            print(f"Status: {test_status} --> continue")
+            continue
+
         send_email = True
         if pd.isna(test_score) or test_score == 0:
+            continue
             test_score = 0
             if test_sent_more_than_20_days_ago:
                 send_email = False
 
-        if has_testdome_note(match_id, headers=headers):
-            print(f"Nota 'TestDome' già presente --> non faccio nulla.")
-            continue
+        if not has_testdome_note(match_id, headers=headers):
+            note_text = (
+                f"Testdome: {test_score}% {test_name} {test_time_used}\n"
+                f"{test_outcome}"
+            )
 
-        note_text = (
-            f"Testdome: {test_score}% {test_name} {test_time_used}\n"
-            f"{test_state}"
-        )
+            url: Optional[str] = f"{API_BASE}/matches/{match_id}/notes/"
+            response = requests.post(url, json={"info": note_text}, headers=headers)
+            response.raise_for_status()
 
-        url: Optional[str] = f"{API_BASE}/matches/{match_id}/notes/"
-        response = requests.post(url, json={"info": note_text}, headers=headers)
-        response.raise_for_status()
+            print(f"Nota 'TestDome' già presente")
 
-        if test["state"] == "PASSATO":
+        if test_outcome == "PASSATO":
             print("  Test passato")
             move_match(headers, match_id, to_stage_id)
             print(f"  Spostato in '{args.to_stage}'.")
@@ -366,11 +570,12 @@ def main() -> None:
             if gmail_user and gmail_app_password and cand_email:
                 body = body_chiacchierata_template.format(name=cand_first_name)
                 send_gmail(gmail_user, gmail_app_password, cand_email, subject, body)
+                time.sleep(125)
                 print("  Email chiacchierata inviata.")
             else:
                 print("  Email NON inviata (credenziali o email mancanti).")
 
-        if test["state"] == "FALLITO":
+        if test_outcome == "FALLITO":
             print("  Test fallito")
             drop_candidate(headers, int(match_id))
             print(f"  Candidato droppato.")
@@ -382,15 +587,12 @@ def main() -> None:
             if gmail_user and gmail_app_password and cand_email:
                 body = body_drop_template.format(name=cand_first_name)
                 send_gmail(gmail_user, gmail_app_password, cand_email, subject, body)
+                time.sleep(125)
                 print("  Email drop inviata.")
             else:
                 print("  Email NON inviata (credenziali o email mancanti).")
 
-        if args.pause > 0 and idx < len(selected):
-            time.sleep(args.pause)
-
-        time.sleep(8)
-
+"""
 
 
 if __name__ == "__main__":

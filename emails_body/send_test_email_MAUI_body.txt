@@ -1,0 +1,38 @@
+Ciao {name},
+
+sono Lorenzo Rivaroli, Talent Acquisition in Zupit. Volevo innanzitutto ringraziarti per la tua candidatura di MAUI.
+
+Ti scrivo questa email perché il tuo profilo è interessante e ci piacerebbe approfondire alcuni aspetti.
+
+Solitamente facciamo una prima chiacchierata informale per conoscerci, capire chi sei, cosa ti motiva, quello che ti piace fare e cosa stai cercando da una nuova esperienza lavorativa, oltre ovviamente a raccontarti di Zupit.
+Dato che si sono proposte moltissime persone interessanti (abbiamo gestito più di mille candidature in pochi mesi) diventerebbe impossibile sentire tutti in questo modo.
+
+Abbiamo quindi deciso di anticipare il secondo step del nostro processo, che consiste in un test tecnico preliminare on-line su Testdome, dove dovrai rispondere a qualche domanda e scrivere del codice. Il tutto dura circa 1.5h e puoi farlo quando ti risulta più comodo.
+
+Se ti interessa proseguire in questo percorso ecco il link al test:
+
+https://app.testdome.com/screening/apply/355397c308974357b4e8c3d1807a6c78
+
+Inoltre colgo l'occasione per descriverti ad alto livello gli step del nostro iter di selezione:
+
+TEST TECNICO (testdome)
+Appena lo completi ci prenderemo del tempo (pochi giorni) per valutarlo.
+
+CHIACCHIERATA CONOSCITIVA
+Un incontro con il team di Talent Acquisition per conoscerci meglio.
+
+COLLOQUIO TECNICO
+Meeting one-to-one con uno dei nostri Tech Leader.
+
+LIVE CODING
+Meeting di un paio d'ore in cui metteremo le mani nel codice insieme per vedere come ti comporti.
+In questa occasione ci sarà un Tech lead diverso da quello del colloquio tecnico per avere un secondo parere.
+
+ASPETTI CONTRATTUALI
+Ultimo incontro con il nostro CEO per concordare gli aspetti contrattuali.
+
+A ogni passaggio, se da una delle due parti non ci fosse un fit, il processo verrà interrotto in modo trasparente.
+
+Per qualsiasi dubbio o domanda non esitare a contattarmi.
+
+Un saluto e a presto!

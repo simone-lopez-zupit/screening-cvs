@@ -53,12 +53,12 @@ def get_all_matches(
     return matches_raw
 
 
-def parse_created_at(match):
-    created_at = match.get("created_at")
-    if not created_at:
+def parse_updated_at(match):
+    updated_at = match.get("updated_at")
+    if not updated_at:
         return None
-    created_at = created_at.replace("Z", "+00:00")
-    return datetime.fromisoformat(created_at).replace(tzinfo=None)
+    updated_at = updated_at.replace("Z", "+00:00")
+    return datetime.fromisoformat(updated_at).replace(tzinfo=None)
 
 
 def get_matches_grouped_by_stage(
@@ -68,7 +68,7 @@ def get_matches_grouped_by_stage(
 
     rows: List[Dict[str, str]] = []
 
-    matches_filtered = [match for match in matches if (dt := parse_created_at(match)) is not None and since <= dt <= to]
+    matches_filtered = [match for match in matches if (dt := parse_updated_at(match)) is not None and since <= dt <= to]
 
     # Sort by stage first (groupby requires sorted data) and group by stage
     matches_sorted = sorted(matches_filtered, key=lambda match: match.get("job_pipeline_stage").get("rank"))
@@ -128,10 +128,23 @@ def main() -> None:
 
     date_ranges = [
         (datetime(2022, 1, 1), datetime.today()), # full range
-        (datetime(2022, 1, 1), datetime(2022, 12, 31)), # 2022
-        (datetime(2023, 1, 1), datetime(2023, 12, 31)), # 2023
-        (datetime(2024, 1, 1), datetime(2024, 12, 31)), # 2024
-        (datetime(2025, 1, 1), datetime(2025, 12, 31)), # 2025
+        (datetime(2022, 1, 1), datetime(2022, 12, 31)),  # 2022
+        (datetime(2023, 1, 1), datetime(2023, 12, 31)),  # 2023
+        (datetime(2024, 1, 1), datetime(2024, 12, 31)),  # 2024
+        (datetime(2025, 1, 1), datetime(2025, 12, 31)),  # 2025
+        (datetime(2025, 1, 1), datetime(2025, 1, 31)),   # 2025 gen
+        (datetime(2025, 2, 1), datetime(2025, 2, 28)),   # 2025 feb
+        (datetime(2025, 3, 1), datetime(2025, 3, 31)),   # 2025 mar
+        (datetime(2025, 4, 1), datetime(2025, 4, 30)),   # 2025 apr
+        (datetime(2025, 5, 1), datetime(2025, 5, 31)),   # 2025 mag
+        (datetime(2025, 6, 1), datetime(2025, 6, 30)),   # 2025 giu
+        (datetime(2025, 7, 1), datetime(2025, 7, 31)),   # 2025 lug
+        (datetime(2025, 8, 1), datetime(2025, 8, 31)),   # 2025 ago
+        (datetime(2025, 9, 1), datetime(2025, 9, 30)),   # 2025 set
+        (datetime(2025, 10, 1), datetime(2025, 10, 31)), # 2025 ott
+        (datetime(2025, 11, 1), datetime(2025, 11, 30)), # 2025 nov
+        (datetime(2025, 12, 1), datetime(2025, 12, 31)), # 2025 dic
+        (datetime(2026, 1, 1), datetime.today()),                         # 2026 gen
         (datetime(2025, 10, 1), datetime(2025, 11, 30)), # secondo giro 2025
         (datetime(2025, 12, 1), datetime(2025, 12, 31)), # terzo giro 2025
     ]

@@ -13,12 +13,13 @@ API_BASE = "https://api.manatal.com/open/v3"
 OUTPUT_FIELDS = [
     "stage_name",
     "stage_rank",
-    "pending",
-    "dropped",
-    "passed",
-    "perc_dropped",
-    "perc_passed",
-    "left"
+    "drop",
+    "standing",
+    "pass",
+    "total",
+    "perc_pass",
+    "perc_drop",
+    "perc_drop_cum",
 ]
 
 def build_headers(raw_token: str) -> Dict[str, str]:
@@ -63,12 +64,13 @@ def parse_updated_at(match):
 
 def get_matches_grouped_by_stage(
         matches: List[Dict[str, str]],
-        since: datetime = datetime(2025,1,1),
-        to: datetime = datetime(2025,12,31)) -> List[Dict[str, str]]:
+        since: datetime,
+        to: datetime) -> List[Dict[str, str]]:
 
     rows: List[Dict[str, str]] = []
 
     matches_filtered = [match for match in matches if (dt := parse_updated_at(match)) is not None and since <= dt <= to]
+    matches_filtered = [match for  match in matches_filtered if match.get("rank") not in ("1", "5", "6", "7")]
 
     # Sort by stage first (groupby requires sorted data) and group by stage
     matches_sorted = sorted(matches_filtered, key=lambda match: match.get("job_pipeline_stage").get("rank"))
@@ -79,19 +81,21 @@ def get_matches_grouped_by_stage(
     matches_left = len(matches_filtered)
 
     for (stage, matches) in matches_grouped.items():
-        matches_pending = len([match for match in matches if match.get("is_active") == True])
-        matches_dropped = len([match for match in matches if match.get("is_active") == False])
-        matches_passed = matches_left - matches_dropped - matches_pending
+        matches_dropped = len([m for m in matches if m.get("is_active") == False])
+        matches_standing = len([m for m in matches if m.get("is_active") == True])
+        matches_total = matches_left
+        matches_passed = matches_left - matches_dropped - matches_standing
 
         row = {
             "stage_name": stage,
-            "stage_rank": matches[0].get("job_pipeline_stage").get("rank") if len(matches) > 0 else -1,
-            "pending": matches_pending,
-            "dropped": matches_dropped,
-            "passed": matches_passed,
-            "perc_dropped": round(matches_dropped / matches_left, 2),
-            "perc_passed": round(matches_passed / matches_left, 2),
-            "left": matches_left
+            "stage_rank": matches[0].get("job_pipeline_stage").get("rank", 0) if len(matches) > 0 else -1,
+            "drop": matches_dropped,
+            "standing": matches_standing,
+            "pass": matches_passed,
+            "total": matches_total,
+            "perc_pass": round(matches_passed / matches_total, 2),
+            "perc_drop": round(matches_dropped / matches_total, 2),
+            "perc_drop_cum": round(matches_dropped / len(matches_filtered), 2),
         }
         rows.append(row)
 
@@ -146,17 +150,14 @@ def main() -> None:
         (datetime(2025, 12, 1), datetime(2025, 12, 31)), # 2025 dic
         (datetime(2026, 1, 1), datetime.today()),                         # 2026 gen
         (datetime(2025, 10, 1), datetime(2025, 11, 30)), # secondo giro 2025
-        (datetime(2025, 12, 1), datetime(2025, 12, 31)), # terzo giro 2025
+        (datetime(2025, 12, 1), datetime.today()), # terzo giro 2025
     ]
 
-    rows = []
+    rows = [{}]
 
     for since, to in date_ranges:
         rows.append({
-            "stage_name": "Dal",
-            "stage_rank": since.strftime("%-d %B %Y"),
-            "pending": "al",
-            "dropped": to.strftime("%-d %B %Y"),
+            "stage_name": f"Dal {since.strftime("%-d %B %Y")} al {to.strftime("%-d %B %Y")}",
         })
         matches = get_matches_grouped_by_stage(all_matches, since=since, to=to)
         rows.extend(matches)

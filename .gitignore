@@ -42,6 +42,11 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Credentials / tokens (NEVER commit these)
+google-credentials.json
+google-oauth-credentials.json
+token.json
+
 # Project data/output
 cvs/
 cvs_duplicati/

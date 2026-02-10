@@ -89,7 +89,7 @@ def fetch_job_matches(
                 continue
             if stage_name and str(stage.get("name") or "").strip().lower() != stage_name.strip().lower():
                 continue
-            if only_active and not match.get("is_active", False):
+            if only_active and match.get("is_active", False):
                 continue
             matches.append(match)
         url = absolute_url(data.get("next"))
@@ -146,7 +146,7 @@ def has_testdome_note(cand_id: int, headers: Dict[str, str]) -> bool:
     notes = resp.json()
 
     return any(
-        isinstance(note.get("text"), str) and "testdome" in note["text"].lower()
+        isinstance(note.get("info"), str) and "testdome" in note["info"].lower()
         for note in notes
     )
 
@@ -229,16 +229,12 @@ def is_before_one_month_ago(test_last_activity):
     return days_passed > 20
 
 
-def get_manatal_credentials(job_id_arg: Optional[str]) -> tuple[str, str]:
+def get_manatal_credentials() -> str:
     api_key = os.getenv("MANATAL_API_KEY")
     if not api_key:
         raise SystemExit("MANATAL_API_KEY mancante.")
 
-    job_id = job_id_arg or os.getenv("MANATAL_JOB_DEV_ID")
-    if not job_id:
-        raise SystemExit("MANATAL_JOB_DEV_ID mancante.")
-
-    return api_key, job_id
+    return api_key
 
 
 def parse_match_datetime(date_str: str) -> datetime:
@@ -269,14 +265,16 @@ def extract_to_evaluate(df: pd.DataFrame):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Pipeline di test Manatal -> test preliminare add notes.")
-    parser.add_argument("--job-id", help="ID del job Manatal (fallback: MANATAL_JOB_DEV_ID).")
     parser.add_argument("--email-drop-body-file", default=os.getenv("DROP_EMAIL_BODY_FILE"))
     parser.add_argument("--email-chiacchierata-body-file", default=os.getenv("SEND_CHIACCHIERATA_EMAIL_BODY_FILE"))
 
     args = parser.parse_args()
 
     # MANATAL
-    api_key, job_id = get_manatal_credentials(args.job_id)
+    job_id = 303943 # DEV
+    # job_id = 3349722 # MAUI
+
+    api_key = get_manatal_credentials()
     headers = build_headers(api_key)
     from_stage = "Test preliminare"
     to_stage = "Chiacchierata conoscitiva"
@@ -304,8 +302,6 @@ def main() -> None:
     # GMAIL
     gmail_user = os.getenv("GMAIL_USER")
     gmail_app_password = os.getenv("GMAIL_APP_PASSWORD")
-
-    # GMAIL
     email_subject = "Candidatura Zupit"
 
     body_chiacchierata_template_path = args.email_chiacchierata_body_file
@@ -462,6 +458,21 @@ def main() -> None:
         ],
     )
 
+    grouped = df.groupby("Test Status")
+
+    for status, group in grouped:
+        print(f"\n=== {status} ({len(group)}) ===")
+        for _, row in group.iterrows():
+            print(
+                f"{row['Name']:<25} | "
+                f"{row['Email']:<30} | "
+                f"{row['Test']}"
+            )
+
+    print("")
+    print("----")
+    print("")
+
     # df.to_csv("testdome_results.csv", index=False)
     df = format_df(df)
     # df.to_csv("testdome_results_formatted.csv", index=False)
@@ -488,21 +499,20 @@ def main() -> None:
         match_id = int(match.get("id"))
         test_df = df[df["email"] == cand_email]
 
-        print("")
-        print(f"{cand_fullname}  |  email: {cand_email}  |  id: {cand_id}  |  match: {match_id}")
+        print(f"{cand_fullname:<25}  |  email: {cand_email:<30}  |  id: {cand_id:<10}  |  match: {match_id:<10}")
 
         test_count = len(test_df)
 
         if test_count == 0:
-            print(f"  Test non fatto -> continue.")
+            # print(f"  Test non fatto -> continue.")
             test_count_0 += 1
-            #   PASSATE <= 2 settimane --> reminder
-            #   PASSATE > 2 settimane --> drop
             continue
 
         if test_count >= 2:
-            print(f"  {test_count} test con email: {cand_email} --> non faccio nulla")
+            # print(f"  {test_count} test con email: {cand_email} --> non faccio nulla")
             test_count_2 += 1
+            print(f"  Test count 2.")
+
             continue
 
         test = test_df.iloc[0]
@@ -517,12 +527,12 @@ def main() -> None:
         print(f"  Test: {test_name}  |  Score: {test_score}/100  |  ({test_time_used}) - {test_last_activity}")
 
         if test_status in ("didNotTake", "canceled", "started", "sendingInvitation", "paused"):
-            print(f"  Status: {test_status} --> continue")
+            # print(f"  Status: {test_status} --> continue")
             stati_strani += 1
             continue
 
         if test_status == "invited":
-            print(f"  Status: {test_status} | Google Form compilato, Test non ancora fatto")
+            # print(f"  Status: {test_status} | Google Form compilato, Test non ancora fatto")
             invited += 1
             #   PASSATE <= 2 settimane --> reminder
             #   PASSATE > 2 settimane --> drop
@@ -530,6 +540,7 @@ def main() -> None:
 
         if pd.isna(test_score) or test_score == 0:
             score_0 += 1
+            print(f"  Score 0.")
 
             if non_fare_cose:
                 continue
@@ -548,6 +559,7 @@ def main() -> None:
             response.raise_for_status()
 
         if test_score >= 80:
+            print(f"{cand_email}|{test_name}|{test_score}|{test_time_used}|{test_last_activity}")
             passati_80 += 1
 
             if non_fare_cose:
@@ -567,11 +579,12 @@ def main() -> None:
         elif test_score < 60:
             falliti_60 += 1
 
+            print(f"  Test fallito.")
             if non_fare_cose:
                 continue
 
             drop_candidate(headers, int(match_id))
-            print(f"  Test fallito -> droppato.")
+            print(f"  Droppato.")
 
             if gmail_user and gmail_app_password and cand_email:
                 body = body_drop_template.format(name=cand_first_name)
@@ -583,8 +596,11 @@ def main() -> None:
 
         else:
             da_valutare += 1
+            print(f"  Da valutare.")
+
             continue
 
+    print("")
     print("passati:", passati_80)
     print("falliti:", falliti_60)
     print("da_valutare:", da_valutare)
@@ -594,7 +610,7 @@ def main() -> None:
     print("invited:", invited)
     print("score_0:", score_0)
 
-    totale = passati_80 + falliti_60 + da_valutare + test_count_0 + test_count_2 + stati_strani + invited + score_0
+    totale = sum([passati_80, falliti_60, da_valutare, test_count_0, test_count_2, stati_strani, invited, score_0])
     print("Totale:", totale)
 
 

@@ -72,8 +72,9 @@ USER_PROMPT = (
     "FALSE: se il curriculum non è in italiano e se c'è menzione che sa altre lingue e non l'italiano >= C2\n"
     "\n"
     "4. CRITERIO DI ACCETTAZIONE\n"
-    "Decisione ACCETTATO se nessuna condizione é FALSE (possono essere TRUE o NULL). "
-    "Decisione RIFIUTATO se almeno una condizione é FALSE.\n"
+    "Fai un'operazione logica per discriminare tra:"
+    "- Decisione ACCETTATO se nessuna condizione é FALSE (possono essere TRUE o NULL). "
+    "- Decisione RIFIUTATO se almeno una condizione é FALSE.\n"
     "\n"
     "Restituisci un oggetto JSON con questa struttura:\n"
     "{\n"
@@ -422,28 +423,28 @@ def main() -> None:
     write_rows_to_excel(rows, output_path=excel_path, headers=OUTPUT_FIELDS)
     print(f"Excel salvato in: {excel_path}")
 
-    in_manatal_files: List[Path] = []
+    # in_manatal_files: List[Path] = []
     accepted_files: List[Path] = []
     rejected_files: List[Path] = []
 
     for row in rows:
-        in_manatal = True if row["manatal_link"] != "" else False
+        # in_manatal = True if row["manatal_link"] != "" else False
         decision = (row.get("decision") or "").upper()
         pdf_path = input_dir / row.get("file_name", "")
-        if in_manatal:
-            in_manatal_files.append(pdf_path)
-        elif decision == "ACCETTATO":
+        # if in_manatal:
+            # in_manatal_files.append(pdf_path)
+        if decision == "ACCETTATO":
             accepted_files.append(pdf_path)
         elif decision == "RIFIUTATO":
             rejected_files.append(pdf_path)
 
-    zip_manatal_path = Path(f"cv_manatal_{timestamp_str}.zip")
+    # zip_manatal_path = Path(f"cv_manatal_{timestamp_str}.zip")
     zip_accept_path = Path(f"cv_approvati_{timestamp_str}.zip")
     zip_reject_path = Path(f"cv_rifiutati_{timestamp_str}.zip")
-    create_zip(zip_manatal_path, in_manatal_files)
+    # create_zip(zip_manatal_path, in_manatal_files)
     create_zip(zip_accept_path, accepted_files)
     create_zip(zip_reject_path, rejected_files)
-    print(f"Zip MANATAL: {zip_manatal_path}")
+    # print(f"Zip MANATAL: {zip_manatal_path}")
     print(f"Zip ACCETTATI: {zip_accept_path}")
     print(f"Zip RIFIUTATI: {zip_reject_path}")
 

@@ -47,6 +47,9 @@ google-credentials.json
 google-oauth-credentials.json
 token.json
 
+# Logs
+logs/
+
 # Project data/output
 cvs/
 cvs_duplicati/

@@ -17,6 +17,8 @@ file is cached so subsequent runs are non-interactive.
 """
 
 import base64
+import logging
+import logging.handlers
 import re
 import os
 import requests
@@ -24,6 +26,31 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+
+# ──────────────────────────────────────────────
+# LOGGING — daily rotation, 7-day retention
+# ──────────────────────────────────────────────
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+log = logging.getLogger("gmail_manatal")
+log.setLevel(logging.DEBUG)
+
+_file_handler = logging.handlers.TimedRotatingFileHandler(
+    filename=os.path.join(LOG_DIR, "gmail_manatal.log"),
+    when="midnight",
+    interval=1,
+    backupCount=7,
+    encoding="utf-8",
+)
+_file_handler.setFormatter(logging.Formatter("%(asctime)s  %(levelname)-8s  %(message)s"))
+_file_handler.suffix = "%Y-%m-%d"
+
+_console_handler = logging.StreamHandler()
+_console_handler.setFormatter(logging.Formatter("%(levelname)-8s  %(message)s"))
+
+log.addHandler(_file_handler)
+log.addHandler(_console_handler)
 
 # ──────────────────────────────────────────────
 # CONFIGURATION — edit these values
@@ -43,13 +70,19 @@ MANATAL_BASE_URL       = "https://api.manatal.com/open/v3"
 def get_gmail_service():
     """Authenticate with Gmail API and return a service object."""
     creds = None
+    log.debug("Looking for token file: %s (exists: %s)", GMAIL_TOKEN_FILE, os.path.exists(GMAIL_TOKEN_FILE))
+    log.debug("Credentials file: %s (exists: %s)", GMAIL_CREDENTIALS_FILE, os.path.exists(GMAIL_CREDENTIALS_FILE))
+
     if os.path.exists(GMAIL_TOKEN_FILE):
         creds = Credentials.from_authorized_user_file(GMAIL_TOKEN_FILE, GMAIL_SCOPES)
+        log.debug("Loaded cached credentials — valid: %s, expired: %s", creds.valid, creds.expired)
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
+            log.debug("Refreshing expired credentials...")
             creds.refresh(Request())
         else:
+            log.debug("No valid credentials — starting OAuth flow...")
             flow = InstalledAppFlow.from_client_secrets_file(
                 GMAIL_CREDENTIALS_FILE, GMAIL_SCOPES
             )
@@ -57,7 +90,11 @@ def get_gmail_service():
         with open(GMAIL_TOKEN_FILE, "w") as f:
             f.write(creds.to_json())
 
-    return build("gmail", "v1", credentials=creds)
+    # Log authenticated user
+    service = build("gmail", "v1", credentials=creds)
+    profile = service.users().getProfile(userId="me").execute()
+    log.info("Authenticated as: %s", profile.get("emailAddress"))
+    return service
 
 
 def _decode_body(payload: dict) -> str:
@@ -103,10 +140,14 @@ def fetch_recruitment_emails() -> dict[str, dict]:
     """
     service = get_gmail_service()
 
-    subject_prefix = "RECRUITMENT - Candidatura Spontanea [Mid/Senior Dev]"
+    subject_prefix = "RECRUITMENT Candidatura Spontanea [Mid/Senior Dev]"
 
-    # Gmail search query — subject: prefix match
-    query = 'subject:"' + subject_prefix + '"'
+    # Gmail search query — broad match, then filter precisely with startswith
+    query = 'subject:"RECRUITMENT Candidatura Spontanea"'
+    log.debug("Gmail search query: %s", query)
+    log.debug("subject_prefix for startswith filter: %r", subject_prefix)
+    log.debug("maxResults: %s", GMAIL_MAX_RESULTS)
+
     results = (
         service.users()
         .messages()
@@ -114,11 +155,34 @@ def fetch_recruitment_emails() -> dict[str, dict]:
         .execute()
     )
     messages = results.get("messages", [])
+    log.debug("Gmail API returned %d message(s) for query", len(messages))
+
     if not messages:
-        print("No emails found matching the filter.")
+        log.warning("No emails found matching the filter.")
+        # Try a broader query to help diagnose
+        broad_query = "subject:RECRUITMENT"
+        log.debug("Trying broader query: %s", broad_query)
+        broad_results = (
+            service.users()
+            .messages()
+            .list(userId="me", q=broad_query, maxResults=10)
+            .execute()
+        )
+        broad_messages = broad_results.get("messages", [])
+        log.debug("Broader query returned %d message(s)", len(broad_messages))
+        for bm in broad_messages:
+            bm_full = (
+                service.users()
+                .messages()
+                .get(userId="me", id=bm["id"], format="metadata", metadataHeaders=["Subject"])
+                .execute()
+            )
+            bm_headers = {h["name"]: h["value"] for h in bm_full.get("payload", {}).get("headers", [])}
+            log.debug("  Subject: %r", bm_headers.get("Subject", "(none)"))
         return {}
 
     emails: dict[str, dict] = {}
+    skipped = 0
 
     for msg_meta in messages:
         msg = (
@@ -132,10 +196,15 @@ def fetch_recruitment_emails() -> dict[str, dict]:
 
         # Double-check the subject truly starts with the prefix
         if not subject.startswith(subject_prefix):
+            log.debug("SKIPPED — subject does not match prefix")
+            log.debug("  subject:  %r", subject)
+            log.debug("  expected: %r", subject_prefix)
+            skipped += 1
             continue
 
         sender = _extract_email(headers.get("From", ""))
         body = _decode_body(msg["payload"])
+        log.info("MATCHED — sender: %s, subject: %r", sender, subject)
 
         # Keep only the most recent email per sender
         emails[sender] = {
@@ -143,7 +212,8 @@ def fetch_recruitment_emails() -> dict[str, dict]:
             "body": body.strip(),
         }
 
-    print(f"Found {len(emails)} recruitment email(s).")
+    log.info("Total from API: %d, matched: %d, skipped: %d", len(messages), len(emails), skipped)
+    log.info("Found %d recruitment email(s).", len(emails))
     return emails
 
 
@@ -199,18 +269,17 @@ def main():
         return
 
     # Quick preview
-    print("\n── Email → Body mapping ─────────────────")
+    log.info("── Email → Body mapping ─────────────────")
     for addr, data in emails.items():
         preview = data["body"][:120].replace("\n", " ")
-        print(f"  {addr}  |  {data['subject']}  |  {preview}…")
-    print()
+        log.info("  %s  |  %s  |  %s…", addr, data["subject"], preview)
 
     # Step 2 — Push each email body as a note in Manatal
     for sender_email, data in emails.items():
         candidate_pk = find_candidate_by_email(sender_email)
 
         if candidate_pk is None:
-            print(f"⚠  No Manatal candidate found for {sender_email} — skipping.")
+            log.warning("No Manatal candidate found for %s — skipping.", sender_email)
             continue
 
         try:
@@ -219,9 +288,9 @@ def main():
                 note_content=data["body"],
                 subject=data["subject"],
             )
-            print(f"✓  Note created for {sender_email} (candidate {candidate_pk}), note id: {result.get('id')}")
+            log.info("Note created for %s (candidate %s), note id: %s", sender_email, candidate_pk, result.get("id"))
         except requests.HTTPError as exc:
-            print(f"✗  Failed to create note for {sender_email}: {exc}")
+            log.error("Failed to create note for %s: %s", sender_email, exc)
 
 
 if __name__ == "__main__":

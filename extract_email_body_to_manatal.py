@@ -17,10 +17,15 @@ file is cached so subsequent runs are non-interactive.
 """
 
 import base64
+import json
 import logging
 import logging.handlers
 import re
 import os
+
+from dotenv import load_dotenv
+load_dotenv()
+
 import requests
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -60,7 +65,7 @@ GMAIL_TOKEN_FILE       = "token.json"         # cached refresh token
 GMAIL_SCOPES           = ["https://www.googleapis.com/auth/gmail.readonly"]
 GMAIL_MAX_RESULTS      = 50                   # max emails to fetch per run
 
-MANATAL_API_KEY        = os.getenv("MANATAL_API_KEY")
+MANATAL_API_KEY        = os.getenv("MANATAL_API_KEY", "")
 MANATAL_BASE_URL       = "https://api.manatal.com/open/v3"
 
 
@@ -126,95 +131,44 @@ def _extract_email(from_header: str) -> str:
     return match.group(1).lower() if match else from_header.strip().lower()
 
 
-def fetch_recruitment_emails() -> dict[str, dict]:
+def fetch_recruitment_email_for(service, email: str, subject_prefix: str) -> dict | None:
     """
-    Return a dict keyed by sender email:
-    {
-        "john@example.com": {
-            "subject": "RECRUITMENT - Software Engineer",
-            "body": "Full email body text …"
-        },
-        ...
-    }
-    If the same sender sent multiple matching emails, only the latest is kept.
+    Search Gmail for a recruitment email from a specific sender.
+    Returns {"subject": ..., "body": ...} or None.
     """
-    service = get_gmail_service()
+    query = f'from:{email} subject:"RECRUITMENT Candidatura Spontanea" after:2025/01/25'
+    log.debug("Gmail query for %s: %s", email, query)
 
-    subject_prefix = "RECRUITMENT Candidatura Spontanea [Mid/Senior Dev]"
-
-    # Gmail search query — broad match, then filter precisely with startswith
-    query = 'subject:"RECRUITMENT Candidatura Spontanea"'
-    log.debug("Gmail search query: %s", query)
-    log.debug("subject_prefix for startswith filter: %r", subject_prefix)
-    log.debug("maxResults: %s", GMAIL_MAX_RESULTS)
-
-    results = (
-        service.users()
-        .messages()
-        .list(userId="me", q=query, maxResults=GMAIL_MAX_RESULTS)
-        .execute()
-    )
+    results = service.users().messages().list(userId="me", q=query, maxResults=5).execute()
     messages = results.get("messages", [])
-    log.debug("Gmail API returned %d message(s) for query", len(messages))
 
     if not messages:
-        log.warning("No emails found matching the filter.")
-        # Try a broader query to help diagnose
-        broad_query = "subject:RECRUITMENT"
-        log.debug("Trying broader query: %s", broad_query)
-        broad_results = (
-            service.users()
-            .messages()
-            .list(userId="me", q=broad_query, maxResults=10)
-            .execute()
-        )
-        broad_messages = broad_results.get("messages", [])
-        log.debug("Broader query returned %d message(s)", len(broad_messages))
-        for bm in broad_messages:
-            bm_full = (
-                service.users()
-                .messages()
-                .get(userId="me", id=bm["id"], format="metadata", metadataHeaders=["Subject"])
-                .execute()
-            )
-            bm_headers = {h["name"]: h["value"] for h in bm_full.get("payload", {}).get("headers", [])}
-            log.debug("  Subject: %r", bm_headers.get("Subject", "(none)"))
-        return {}
-
-    emails: dict[str, dict] = {}
-    skipped = 0
+        log.debug("  No Gmail messages found for %s", email)
+        return None
 
     for msg_meta in messages:
-        msg = (
-            service.users()
-            .messages()
-            .get(userId="me", id=msg_meta["id"], format="full")
-            .execute()
-        )
+        msg = service.users().messages().get(userId="me", id=msg_meta["id"], format="full").execute()
         headers = {h["name"]: h["value"] for h in msg["payload"].get("headers", [])}
         subject = headers.get("Subject", "")
 
-        # Double-check the subject truly starts with the prefix
         if not subject.startswith(subject_prefix):
-            log.debug("SKIPPED — subject does not match prefix")
-            log.debug("  subject:  %r", subject)
-            log.debug("  expected: %r", subject_prefix)
-            skipped += 1
+            log.debug("  SKIPPED — %r", subject)
             continue
 
-        sender = _extract_email(headers.get("From", ""))
-        body = _decode_body(msg["payload"])
-        log.info("MATCHED — sender: %s, subject: %r", sender, subject)
+        raw_body = _decode_body(msg["payload"])
 
-        # Keep only the most recent email per sender
-        emails[sender] = {
-            "subject": subject,
-            "body": body.strip(),
-        }
+        # Extract only "Informazioni aggiuntive" section
+        marker = "Informazioni aggiuntive:"
+        idx = raw_body.find(marker)
+        if idx == -1:
+            log.debug("  No 'Informazioni aggiuntive' for %s", email)
+            return None
 
-    log.info("Total from API: %d, matched: %d, skipped: %d", len(messages), len(emails), skipped)
-    log.info("Found %d recruitment email(s).", len(emails))
-    return emails
+        body = raw_body[idx + len(marker):].strip()
+        log.info("  Found email body for %s (%d chars)", email, len(body))
+        return {"subject": subject, "body": body}
+
+    return None
 
 
 # ──────────────────────────────────────────────
@@ -227,21 +181,73 @@ def _manatal_headers() -> dict:
     }
 
 
-def find_candidate_by_email(email: str) -> int | None:
-    """Search Manatal for a candidate whose email matches. Returns candidate PK or None."""
-    url = f"{MANATAL_BASE_URL}/candidates/"
-    resp = requests.get(url, headers=_manatal_headers(), params={"search": email})
+def fetch_job_matches(job_id: str, stage_name: str) -> list[dict]:
+    """Fetch all active matches for a job in a given stage."""
+    # First, find the stage ID
+    url = f"{MANATAL_BASE_URL}/match-stages/?page_size=200"
+    stage_id = None
+    while url:
+        resp = requests.get(url, headers=_manatal_headers(), timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        for stage in data.get("results", []):
+            if str(stage.get("name") or "").strip().lower() == stage_name.strip().lower():
+                stage_id = int(stage["id"])
+                break
+        if stage_id:
+            break
+        url = data.get("next")
+
+    if not stage_id:
+        log.error("Stage '%s' not found in Manatal.", stage_name)
+        return []
+
+    log.info("Stage '%s' → id %d", stage_name, stage_id)
+
+    # Fetch matches in that stage
+    matches = []
+    url = f"{MANATAL_BASE_URL}/jobs/{job_id}/matches/?page_size=200"
+    while url:
+        resp = requests.get(url, headers=_manatal_headers(), timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        for match in data.get("results", []):
+            stage = match.get("stage") or {}
+            if int(stage.get("id", -1)) != stage_id:
+                continue
+            if match.get("is_active", False):
+                continue
+            matches.append(match)
+        url = data.get("next")
+
+    log.info("Found %d matches in '%s' for job %s", len(matches), stage_name, job_id)
+    return matches
+
+
+def fetch_candidate(cand_id: int) -> dict:
+    """Fetch a single candidate by ID."""
+    resp = requests.get(f"{MANATAL_BASE_URL}/candidates/{cand_id}/", headers=_manatal_headers(), timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+NOTE_TAG = "[GMAIL_SYNC]"
+
+
+def has_gmail_sync_note(candidate_pk: int) -> bool:
+    """Check if a candidate already has a note tagged with NOTE_TAG."""
+    url = f"{MANATAL_BASE_URL}/candidates/{candidate_pk}/notes/"
+    resp = requests.get(url, headers=_manatal_headers())
     resp.raise_for_status()
     data = resp.json()
 
-    results = data.get("results", [])
-    for candidate in results:
-        # Check primary email or all email fields
-        candidate_email = (candidate.get("email") or "").lower()
-        if candidate_email == email:
-            return candidate["id"]
-
-    return None
+    notes = data if isinstance(data, list) else data.get("results", [])
+    for note in notes:
+        note_text = note.get("note") or note.get("text") or note.get("info") or ""
+        if NOTE_TAG in note_text:
+            log.debug("  Candidate %s already has a %s note (id: %s)", candidate_pk, NOTE_TAG, note.get("id"))
+            return True
+    return False
 
 
 def create_candidate_note(candidate_pk: int, note_content: str, subject: str = "") -> dict:
@@ -249,48 +255,124 @@ def create_candidate_note(candidate_pk: int, note_content: str, subject: str = "
     POST a note on a Manatal candidate.
     Endpoint: POST /open/v3/candidates/{candidate_pk}/notes/
     """
+    log.debug("Creating note for candidate %s (body length: %d chars)", candidate_pk, len(note_content))
     url = f"{MANATAL_BASE_URL}/candidates/{candidate_pk}/notes/"
     payload = {
-        "note": f"**{subject}**\n\n{note_content}" if subject else note_content,
+        "info": f"{NOTE_TAG} **{subject}**\n\n{note_content}" if subject else f"{NOTE_TAG}\n\n{note_content}",
     }
     resp = requests.post(url, headers=_manatal_headers(), json=payload)
     resp.raise_for_status()
-    return resp.json()
+    result = resp.json()
+    log.info("Note created for candidate %s — note id: %s", candidate_pk, result.get("id"))
+    return result
 
 
 # ──────────────────────────────────────────────
 # 3. MAIN — glue it all together
 # ──────────────────────────────────────────────
 def main():
-
-    # Step 1 — Fetch recruitment emails from Gmail
-    emails = fetch_recruitment_emails()
-    if not emails:
+    if not MANATAL_API_KEY:
+        log.error("MANATAL_API_KEY env var not set.")
         return
 
-    # Quick preview
-    log.info("── Email → Body mapping ─────────────────")
-    for addr, data in emails.items():
-        preview = data["body"][:120].replace("\n", " ")
-        log.info("  %s  |  %s  |  %s…", addr, data["subject"], preview)
+    dry_run       = os.getenv("DRY_RUN", "false").lower() in ("1", "true", "yes")
+    limit         = int(os.getenv("LIMIT", "0"))
+    save_file     = os.getenv("SAVE_FILE", "")
+    job_id        = os.getenv("MANATAL_JOB_TL_ID", "2381880")
+    stage_name    = os.getenv("MANATAL_STAGE", "Nuova candidatura (TL)")
+    subject_prefix = os.getenv("SUBJECT_PREFIX", "RECRUITMENT Candidatura Spontanea [Technical Lead]")
 
-    # Step 2 — Push each email body as a note in Manatal
-    for sender_email, data in emails.items():
-        candidate_pk = find_candidate_by_email(sender_email)
+    # Step 1 — Get matches from Manatal job/stage
+    log.info("Fetching matches for job %s, stage '%s'...", job_id, stage_name)
+    matches = fetch_job_matches(job_id, stage_name)
+    if not matches:
+        log.warning("No matches found.")
+        return
 
-        if candidate_pk is None:
-            log.warning("No Manatal candidate found for %s — skipping.", sender_email)
+    if limit:
+        log.info("Will stop after %d note(s) created.", limit)
+
+    # Step 2 — For each match, get candidate email, then search Gmail
+    gmail_service = get_gmail_service()
+
+    matched = []
+    no_email_body = []
+
+    for match in matches:
+        if limit and len(matched) >= limit:
+            log.info("Reached note limit (%d), stopping.", limit)
+            break
+
+        cand_id = int(match["candidate"])
+        candidate = fetch_candidate(cand_id)
+        cand_email = (candidate.get("email") or "").lower().strip()
+        cand_name = f"{candidate.get('first_name', '')} {candidate.get('last_name', '')}".strip()
+
+        if not cand_email:
+            log.warning("  %s (id %s) — no email on Manatal, skipping.", cand_name, cand_id)
+            no_email_body.append(cand_name)
             continue
 
+        log.info("Processing %s (%s)...", cand_name, cand_email)
+
+        # Check if note already exists
+        if has_gmail_sync_note(cand_id):
+            log.info("  SKIP — already has a %s note", NOTE_TAG)
+            continue
+
+        # Search Gmail for this candidate's recruitment email
+        email_data = fetch_recruitment_email_for(gmail_service, cand_email, subject_prefix)
+        if not email_data:
+            log.debug("  No recruitment email with 'Informazioni aggiuntive' for %s", cand_email)
+            no_email_body.append(cand_name)
+            continue
+
+        preview = email_data["body"][:200].replace("\n", " ")
+        log.info("  %s → %s…", cand_email, preview)
+        matched.append((cand_email, cand_id, cand_name, email_data))
+
+    log.info("── Summary: %d with email body, %d without ──", len(matched), len(no_email_body))
+
+    if not matched:
+        log.warning("Nothing to do.")
+        return
+
+    # Save to file if requested
+    if save_file:
+        output = []
+        for cand_email, cand_id, cand_name, data in matched:
+            output.append({
+                "name": cand_name,
+                "email": cand_email,
+                "candidate_id": cand_id,
+                "subject": data["subject"],
+                "body": data["body"],
+                "note": f"{NOTE_TAG} **{data['subject']}**\n\n{data['body']}",
+            })
+        with open(save_file, "w", encoding="utf-8") as f:
+            json.dump(output, f, ensure_ascii=False, indent=2)
+        log.info("Saved %d matched note(s) to %s", len(output), save_file)
+        return
+
+    # Step 3 — Create notes on Manatal
+    if dry_run:
+        log.info("── DRY RUN — skipping note creation ──")
+        return
+
+    created = 0
+    for cand_email, cand_id, cand_name, data in matched:
         try:
             result = create_candidate_note(
-                candidate_pk=candidate_pk,
+                candidate_pk=cand_id,
                 note_content=data["body"],
                 subject=data["subject"],
             )
-            log.info("Note created for %s (candidate %s), note id: %s", sender_email, candidate_pk, result.get("id"))
+            log.info("Note created for %s (%s), note id: %s", cand_name, cand_email, result.get("id"))
+            created += 1
         except requests.HTTPError as exc:
-            log.error("Failed to create note for %s: %s", sender_email, exc)
+            log.error("Failed to create note for %s: %s", cand_name, exc)
+
+    log.info("Done — created: %d notes", created)
 
 
 if __name__ == "__main__":

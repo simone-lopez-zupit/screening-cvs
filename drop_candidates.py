@@ -34,7 +34,7 @@ def fetch_stage_ids(headers: Dict[str, str], stage_names: Iterable[str]) -> Dict
     wanted = {name.lower(): name for name in stage_names}
     found: Dict[str, int] = {}
 
-    url: Optional[str] = f"{API_BASE}/match-stages/"
+    url: Optional[str] = f"{API_BASE}/match-stages/?page_size=200"
     while url:
         resp = requests.get(url, headers=headers, timeout=30)
         resp.raise_for_status()
@@ -52,6 +52,8 @@ def fetch_stage_ids(headers: Dict[str, str], stage_names: Iterable[str]) -> Dict
 def fetch_job_matches(
     headers: Dict[str, str],
     job_id: str,
+    stage_id: int,
+    stage_name: Optional[str] = None,
     page_size: int = 100,
     only_active: bool = True,
 ) -> List[Dict[str, object]]:
@@ -62,6 +64,11 @@ def fetch_job_matches(
         resp.raise_for_status()
         data = resp.json()
         for match in data.get("results", []):
+            stage = match.get("stage") or {}
+            if int(stage.get("id", -1)) != stage_id:
+                continue
+            if stage_name and str(stage.get("name") or "").strip().lower() != stage_name.strip().lower():
+                continue
             if only_active and not match.get("is_active", False):
                 continue
             matches.append(match)
@@ -106,7 +113,7 @@ def send_gmail(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Pipeline di test Manatal -> drop candidate + email Gmail.")
-    parser.add_argument("--job-id", help="ID del job Manatal (fallback: MANATAL_JOB_DROP_ID).")
+    parser.add_argument("--job-id", help="ID del job Manatal (fallback: MANATAL_JOB_TL_ID).")
 
     parser.add_argument(
         "--email-subject",
@@ -123,15 +130,21 @@ def main() -> None:
     api_key = os.getenv("MANATAL_API_KEY")
     if not api_key:
         raise SystemExit("MANATAL_API_KEY mancante.")
-    job_id = args.job_id or os.getenv("MANATAL_JOB_DROP_ID")
+    job_id = args.job_id or os.getenv("MANATAL_JOB_TL_ID")
     if not job_id:
-        raise SystemExit("MANATAL_JOB_DROP_ID mancante.")
+        raise SystemExit("MANATAL_JOB_TL_ID mancante.")
 
     headers = build_headers(api_key)
 
-    print(f"Cerco match per job {job_id}...")
-    matches = fetch_job_matches(headers, job_id, page_size=200)
-    print(f"Trovati {len(matches)}")
+    from_stage = "Nuova candidatura (TL)"
+    stage_map = fetch_stage_ids(headers, [from_stage])
+    from_stage_id = stage_map.get(from_stage)
+    if from_stage_id is None:
+        raise SystemExit(f"Stage non trovato: '{from_stage}'")
+
+    print(f"Cerco match in '{from_stage}' per job {job_id}...")
+    matches = fetch_job_matches(headers, job_id, from_stage_id, stage_name=from_stage, page_size=200)
+    print(f"Trovati {len(matches)} match nello stage '{from_stage}'.")
 
     selected: List[Tuple[Dict[str, object], Dict[str, object]]] = []
     for match in matches:
@@ -168,7 +181,7 @@ def main() -> None:
         else:
             print("  Email NON inviata (credenziali o email mancanti).")
 
-        time.sleep(75)
+        time.sleep(65)
 
 
 if __name__ == "__main__":

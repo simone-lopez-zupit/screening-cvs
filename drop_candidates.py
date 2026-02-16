@@ -1,13 +1,12 @@
 import os
-import smtplib
-from email.message import EmailMessage
 from pathlib import Path
 import time
 from typing import Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
 
-from manatal_service import build_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, drop_candidate
+from services.gmail_service import send_gmail
+from services.manatal_service import build_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, drop_candidate
 
 
 load_dotenv()
@@ -33,24 +32,6 @@ BOARDS = {
 # ── Change this to switch board ───────────────────────────────────
 BOARD = "TL"
 # ──────────────────────────────────────────────────────────────────
-
-
-def send_gmail(
-    user: str,
-    app_password: str,
-    to_email: str,
-    subject: str,
-    body: str,
-) -> None:
-    msg = EmailMessage()
-    msg["From"] = user
-    msg["To"] = to_email
-    msg["Subject"] = subject
-    msg.set_content(body)
-
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(user, app_password)
-        smtp.send_message(msg)
 
 
 def main() -> None:

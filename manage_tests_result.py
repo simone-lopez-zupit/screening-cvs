@@ -1,9 +1,7 @@
 import argparse
 import os
-import smtplib
 from collections import defaultdict
 from datetime import datetime, timedelta
-from email.message import EmailMessage
 import time
 from ftplib import all_errors
 from pathlib import Path
@@ -14,7 +12,8 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import requests
 from dotenv import load_dotenv
 
-from manatal_service import (
+from services.gmail_service import send_gmail
+from services.manatal_service import (
     build_headers,
     fetch_stage_ids,
     fetch_all_job_matches,
@@ -80,24 +79,6 @@ def format_df(df: pd.DataFrame):
     ]]
 
     return df
-
-
-def send_gmail(
-        user: str,
-        app_password: str,
-        to_email: str,
-        subject: str,
-        body: str,
-) -> None:
-    msg = EmailMessage()
-    msg["From"] = user
-    msg["To"] = to_email
-    msg["Subject"] = subject
-    msg.set_content(body)
-
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(user, app_password)
-        smtp.send_message(msg)
 
 
 def is_before_one_month_ago(test_last_activity):

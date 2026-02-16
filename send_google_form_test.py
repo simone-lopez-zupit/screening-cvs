@@ -1,13 +1,12 @@
 import os
-import smtplib
-from email.message import EmailMessage
 from pathlib import Path
 import time
 from typing import Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
 
-from manatal_service import build_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, move_match
+from services.gmail_service import send_gmail
+from services.manatal_service import build_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, move_match
 
 
 load_dotenv()
@@ -22,24 +21,6 @@ GMAIL_USER      = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 SLEEP_SECONDS   = 33
 # ──────────────────────────────────────────────────────────────────────
-
-
-def send_gmail(
-    user: str,
-    app_password: str,
-    to_email: str,
-    subject: str,
-    body: str,
-) -> None:
-    msg = EmailMessage()
-    msg["From"] = user
-    msg["To"] = to_email
-    msg["Subject"] = subject
-    msg.set_content(body)
-
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(user, app_password)
-        smtp.send_message(msg)
 
 
 def main() -> None:

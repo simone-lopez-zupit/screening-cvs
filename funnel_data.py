@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from dotenv import load_dotenv
 from openpyxl import Workbook
 
-from manatal_service import build_headers, get_all_matches
+from services.manatal_service import build_headers, get_all_matches
 
 # ── Configuration ─────────────────────────────────────────────────────
 JOB_ID = "303943"  # DEV

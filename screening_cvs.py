@@ -20,7 +20,7 @@ from openpyxl.styles import PatternFill
 from openai import OpenAI
 from dotenv import load_dotenv
 
-from manatal_service import build_headers, get_candidate_info
+from services.manatal_service import build_headers, get_candidate_info
 
 
 load_dotenv()

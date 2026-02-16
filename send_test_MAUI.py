@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 
 from services.gmail_service import send_gmail
-from services.manatal_service import build_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, move_match
+from services.manatal_service import get_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, move_match
 
 
 load_dotenv()
@@ -17,6 +17,8 @@ DEFAULT_FROM_STAGE       = os.getenv("MANATAL_STAGE_FROM", "Nuova candidatura")
 DEFAULT_TO_STAGE         = os.getenv("MANATAL_STAGE_TO", "Test preliminare")
 DEFAULT_EMAIL_SUBJECT    = os.getenv("PIPELINE_EMAIL_SUBJECT", "Candidatura Zupit")
 DEFAULT_EMAIL_BODY_FILE  = os.getenv("SEND_TEST_EMAIL_MAUI_BODY_FILE")
+GMAIL_USER               = os.getenv("GMAIL_USER")
+GMAIL_APP_PASSWORD       = os.getenv("GMAIL_APP_PASSWORD")
 SLEEP_SECONDS            = 78
 # ──────────────────────────────────────────────────────────────────────
 
@@ -47,14 +49,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    api_key = os.getenv("MANATAL_API_KEY")
-    if not api_key:
-        raise SystemExit("MANATAL_API_KEY mancante.")
+    headers = get_headers()
     job_id = args.job_id or os.getenv("MANATAL_JOB_MAUI_ID")
     if not job_id:
         raise SystemExit("MANATAL_JOB_MAUI_ID mancante.")
 
-    headers = build_headers(api_key)
     stage_map = fetch_stage_ids(headers, [args.from_stage, args.to_stage])
     from_stage_id = stage_map.get(args.from_stage)
     to_stage_id = stage_map.get(args.to_stage)
@@ -72,8 +71,6 @@ def main() -> None:
         selected.append((match, candidate))
 
     print(f"Da processare: {len(selected)} candidati.")
-    gmail_user = os.getenv("GMAIL_USER")
-    gmail_app_password = os.getenv("GMAIL_APP_PASSWORD")
     subject = args.email_subject
     body_template_path = args.email_maui_body_file
     body_template: Optional[str] = None
@@ -93,9 +90,9 @@ def main() -> None:
         move_match(headers, int(match["id"]), to_stage_id)
         print(f"  Spostato in '{args.to_stage}'.")
 
-        if gmail_user and gmail_app_password and cand_email:
+        if GMAIL_USER and GMAIL_APP_PASSWORD and cand_email:
             body = body_template.format(name=cand_first_name)
-            send_gmail(gmail_user, gmail_app_password, cand_email, subject, body)
+            send_gmail(GMAIL_USER, GMAIL_APP_PASSWORD, cand_email, subject, body)
             print("  Email inviata.")
         else:
             print("  Email NON inviata (credenziali o email mancanti).")

@@ -6,8 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 
 from services.gmail_service import send_gmail
-from services.manatal_service import build_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, drop_candidate
-
+from services.manatal_service import get_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, drop_candidate
 
 load_dotenv()
 
@@ -29,6 +28,9 @@ BOARDS = {
     },
 }
 
+GMAIL_USER         = os.getenv("GMAIL_USER")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+
 # ── Change this to switch board ───────────────────────────────────
 BOARD = "TL"
 # ──────────────────────────────────────────────────────────────────
@@ -42,13 +44,7 @@ def main() -> None:
     EMAIL_BODY_FILE = cfg["email_body_file"]
     SLEEP_SECONDS = cfg["sleep_seconds"]
 
-    api_key = os.getenv("MANATAL_API_KEY")
-    if not api_key:
-        raise SystemExit("MANATAL_API_KEY mancante.")
-    if not JOB_ID:
-        raise SystemExit("MANATAL_JOB_TL_ID mancante.")
-
-    headers = build_headers(api_key)
+    headers = get_headers()
 
     stage_map = fetch_stage_ids(headers, [FROM_STAGE])
     from_stage_id = stage_map.get(FROM_STAGE)
@@ -66,8 +62,6 @@ def main() -> None:
         selected.append((match, candidate))
 
     print(f"Da processare: {len(selected)} candidati.")
-    gmail_user = os.getenv("GMAIL_USER")
-    gmail_app_password = os.getenv("GMAIL_APP_PASSWORD")
     subject = EMAIL_SUBJECT
     body_template_path = EMAIL_BODY_FILE
     body_template: Optional[str] = None
@@ -87,9 +81,9 @@ def main() -> None:
         drop_candidate(headers, int(match["id"]))
         print("  Droppato.")
 
-        if gmail_user and gmail_app_password and cand_email:
+        if GMAIL_USER and GMAIL_APP_PASSWORD and cand_email:
             body = body_template.format(name=cand_first_name)
-            send_gmail(gmail_user, gmail_app_password, cand_email, subject, body)
+            send_gmail(GMAIL_USER, GMAIL_APP_PASSWORD, cand_email, subject, body)
             print("  Email inviata.")
         else:
             print("  Email NON inviata (credenziali o email mancanti).")

@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from dotenv import load_dotenv
 from openpyxl import Workbook
 
-from services.manatal_service import build_headers, get_all_matches
+from services.manatal_service import get_headers, get_all_matches
 
 # ── Configuration ─────────────────────────────────────────────────────
 JOB_ID = "303943"  # DEV
@@ -91,11 +91,7 @@ def write_rows_to_excel(rows: List[Dict[str, str]], output_path: Path, headers: 
 def main() -> None:
     load_dotenv()
 
-    api_key = os.getenv("MANATAL_API_KEY")
-    if not api_key:
-        raise SystemExit("MANATAL_API_KEY mancante.")
-
-    headers = build_headers(api_key)
+    headers = get_headers()
 
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     all_matches = get_all_matches(headers=headers, job_id=JOB_ID)

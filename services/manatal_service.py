@@ -2,6 +2,7 @@
 Manatal API service — shared helpers used by all pipeline scripts.
 """
 
+import os
 import time
 from typing import Dict, Iterable, List, Optional
 
@@ -11,6 +12,8 @@ API_BASE = "https://api.manatal.com/open/v3"
 
 NOTE_TAG = "[GMAIL_SYNC]"
 
+MANATAL_API_KEY = os.getenv("MANATAL_API_KEY", "")
+
 
 # ── Internal helpers ─────────────────────────────────────────────────
 
@@ -19,6 +22,12 @@ def build_headers(raw_token: str) -> Dict[str, str]:
     if not token.lower().startswith("token "):
         token = f"Token {token}"
     return {"Authorization": token, "Content-Type": "application/json"}
+
+
+def get_headers() -> Dict[str, str]:
+    if not MANATAL_API_KEY:
+        raise SystemExit("MANATAL_API_KEY mancante.")
+    return build_headers(MANATAL_API_KEY)
 
 
 def absolute_url(url: Optional[str]) -> Optional[str]:

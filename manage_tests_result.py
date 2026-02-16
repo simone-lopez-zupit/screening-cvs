@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 
 from services.gmail_service import send_gmail
 from services.manatal_service import (
-    build_headers,
+    get_headers,
     fetch_stage_ids,
     fetch_all_job_matches,
     fetch_job_matches,
@@ -34,6 +34,8 @@ JOB_ID        = 303943  # DEV
 FROM_STAGE    = "Test preliminare"
 TO_STAGE      = "Chiacchierata conoscitiva"
 EMAIL_SUBJECT = "Candidatura Zupit"
+GMAIL_USER      = os.getenv("GMAIL_USER")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 NON_FARE_COSE = True
 SLEEP_SECONDS = 85
 # ──────────────────────────────────────────────────────────────────────
@@ -99,14 +101,6 @@ def is_before_one_month_ago(test_last_activity):
     return days_passed > 20
 
 
-def get_manatal_credentials() -> str:
-    api_key = os.getenv("MANATAL_API_KEY")
-    if not api_key:
-        raise SystemExit("MANATAL_API_KEY mancante.")
-
-    return api_key
-
-
 def parse_match_datetime(date_str: str) -> datetime:
     """Parse ISO 8601 con Z → naive datetime."""
     if date_str.endswith('Z'):
@@ -140,8 +134,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    api_key = get_manatal_credentials()
-    headers = build_headers(api_key)
+    headers = get_headers()
 
     # TESTDOME
     testdome_client_id = os.getenv("TEST_DOME_CLIENT_ID")
@@ -164,9 +157,6 @@ def main() -> None:
     testdome_headers = {"Authorization": f"Bearer {access_token}"}
 
     # GMAIL
-    gmail_user = os.getenv("GMAIL_USER")
-    gmail_app_password = os.getenv("GMAIL_APP_PASSWORD")
-
     body_chiacchierata_template_path = args.email_chiacchierata_body_file
     body_chiacchierata_template = Path(body_chiacchierata_template_path).read_text(encoding="utf-8")
     body_drop_template_path = args.email_drop_body_file
@@ -429,9 +419,9 @@ def main() -> None:
             move_match(headers, match_id, to_stage_id)
             print(f"  Test passato -> spostato in '{TO_STAGE}'.")
 
-            if gmail_user and gmail_app_password and cand_email:
+            if GMAIL_USER and GMAIL_APP_PASSWORD and cand_email:
                 body = body_chiacchierata_template.format(name=cand_first_name)
-                send_gmail(gmail_user, gmail_app_password, cand_email, EMAIL_SUBJECT, body)
+                send_gmail(GMAIL_USER, GMAIL_APP_PASSWORD, cand_email, EMAIL_SUBJECT, body)
                 time.sleep(SLEEP_SECONDS)
                 print("  Email chiacchierata inviata.")
             else:
@@ -447,9 +437,9 @@ def main() -> None:
             drop_candidate(headers, int(match_id))
             print(f"  Droppato.")
 
-            if gmail_user and gmail_app_password and cand_email:
+            if GMAIL_USER and GMAIL_APP_PASSWORD and cand_email:
                 body = body_drop_template.format(name=cand_first_name)
-                send_gmail(gmail_user, gmail_app_password, cand_email, EMAIL_SUBJECT, body)
+                send_gmail(GMAIL_USER, GMAIL_APP_PASSWORD, cand_email, EMAIL_SUBJECT, body)
                 time.sleep(SLEEP_SECONDS)
                 print("  Email drop inviata.")
             else:

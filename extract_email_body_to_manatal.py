@@ -1,28 +1,10 @@
-"""
-Gmail → Manatal Note Sync
-=========================
-Searches Gmail for emails whose subject starts with "RECRUITMENT - ",
-builds a dict {sender_email: body}, then creates a note on the matching
-Manatal candidate for each one.
-
-Prerequisites
--------------
-1.  pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib requests
-2.  Enable the Gmail API in Google Cloud Console.
-3.  Download OAuth 2.0 credentials JSON → save as `credentials.json` in the same folder.
-4.  Set your Manatal API token below (Enterprise Plus plan required).
-
-First run will open a browser for Google OAuth consent; a `token.json`
-file is cached so subsequent runs are non-interactive.
-"""
-
 import json
-import logging
 import logging.handlers
 import os
 import time
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 import requests

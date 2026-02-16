@@ -1,4 +1,3 @@
-import argparse
 import os
 import smtplib
 from email.message import EmailMessage
@@ -112,39 +111,51 @@ def send_gmail(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Pipeline di test Manatal -> drop candidate + email Gmail.")
-    parser.add_argument("--job-id", help="ID del job Manatal (fallback: MANATAL_JOB_TL_ID).")
+    # ── Board configurations ──────────────────────────────────────────
+    BOARDS = {
+        "TL": {
+            "from_stage": "Test preliminare (TL)",
+            "job_id": os.getenv("MANATAL_JOB_TL_ID"),
+            "email_subject": "Candidatura Zupit",
+            "email_body_file": os.getenv("DROP_EMAIL_BODY_FILE"),
+            "sleep_seconds": 65,
+        },
+        "DEV": {
+            "from_stage": "Test preliminare (DEV)",
+            "job_id": os.getenv("MANATAL_JOB_DEV_ID"),
+            "email_subject": "Candidatura Zupit",
+            "email_body_file": os.getenv("DROP_EMAIL_BODY_FILE"),
+            "sleep_seconds": 65,
+        },
+    }
 
-    parser.add_argument(
-        "--email-subject",
-        default=os.getenv("PIPELINE_EMAIL_SUBJECT", "Candidatura Zupit"),
-        help="Oggetto dell'email da inviare.",
-    )
-    parser.add_argument(
-        "--email-body-file",
-        default=os.getenv("DROP_EMAIL_BODY_FILE"),
-        help="Percorso del file di testo per il corpo email (UTF-8). Se non impostato, usa env DROP_EMAIL_BODY_FILE.",
-    )
-    args = parser.parse_args()
+    # ── Change this to switch board ───────────────────────────────────
+    BOARD = "TL"
+    # ──────────────────────────────────────────────────────────────────
+
+    cfg = BOARDS[BOARD]
+    FROM_STAGE = cfg["from_stage"]
+    JOB_ID = cfg["job_id"]
+    EMAIL_SUBJECT = cfg["email_subject"]
+    EMAIL_BODY_FILE = cfg["email_body_file"]
+    SLEEP_SECONDS = cfg["sleep_seconds"]
 
     api_key = os.getenv("MANATAL_API_KEY")
     if not api_key:
         raise SystemExit("MANATAL_API_KEY mancante.")
-    job_id = args.job_id or os.getenv("MANATAL_JOB_TL_ID")
-    if not job_id:
+    if not JOB_ID:
         raise SystemExit("MANATAL_JOB_TL_ID mancante.")
 
     headers = build_headers(api_key)
 
-    from_stage = "Nuova candidatura (TL)"
-    stage_map = fetch_stage_ids(headers, [from_stage])
-    from_stage_id = stage_map.get(from_stage)
+    stage_map = fetch_stage_ids(headers, [FROM_STAGE])
+    from_stage_id = stage_map.get(FROM_STAGE)
     if from_stage_id is None:
-        raise SystemExit(f"Stage non trovato: '{from_stage}'")
+        raise SystemExit(f"Stage non trovato: '{FROM_STAGE}'")
 
-    print(f"Cerco match in '{from_stage}' per job {job_id}...")
-    matches = fetch_job_matches(headers, job_id, from_stage_id, stage_name=from_stage, page_size=200)
-    print(f"Trovati {len(matches)} match nello stage '{from_stage}'.")
+    print(f"Cerco match in '{FROM_STAGE}' per job {JOB_ID}...")
+    matches = fetch_job_matches(headers, JOB_ID, from_stage_id, stage_name=FROM_STAGE, page_size=200)
+    print(f"Trovati {len(matches)} match nello stage '{FROM_STAGE}'.")
 
     selected: List[Tuple[Dict[str, object], Dict[str, object]]] = []
     for match in matches:
@@ -155,8 +166,8 @@ def main() -> None:
     print(f"Da processare: {len(selected)} candidati.")
     gmail_user = os.getenv("GMAIL_USER")
     gmail_app_password = os.getenv("GMAIL_APP_PASSWORD")
-    subject = args.email_subject
-    body_template_path = args.email_body_file
+    subject = EMAIL_SUBJECT
+    body_template_path = EMAIL_BODY_FILE
     body_template: Optional[str] = None
     if body_template_path:
         try:
@@ -181,7 +192,7 @@ def main() -> None:
         else:
             print("  Email NON inviata (credenziali o email mancanti).")
 
-        time.sleep(65)
+        time.sleep(SLEEP_SECONDS)
 
 
 if __name__ == "__main__":

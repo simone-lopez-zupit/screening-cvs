@@ -22,6 +22,7 @@ import logging
 import logging.handlers
 import re
 import os
+import time
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -68,7 +69,26 @@ GMAIL_MAX_RESULTS      = 50                   # max emails to fetch per run
 MANATAL_API_KEY        = os.getenv("MANATAL_API_KEY", "")
 MANATAL_BASE_URL       = "https://api.manatal.com/open/v3"
 
-
+stage_names_dev   = [
+    "Nuova candidatura",
+    "Interessante - per futuro",
+    "Test preliminare",
+    "Chiacchierata conoscitiva",
+    "Feedback chiacchierata conoscitiva",
+    "Colloquio tecnico",
+    "Live coding",
+]
+stage_names_tl   = [
+    "Nuova candidatura (TL)",
+    "Interessante - per futuro (TL)",
+    "Test preliminare (TL)",
+    "Chiacchierata conoscitiva (TL)",
+    "Feedback chiacchierata conoscitiva (TL)",
+    "Colloquio tecnico (TL)",
+    "Test pratico chiacchierata con FD (TL)",
+    "Approfondimenti (TL)",
+    "Proposta (TL)",
+]
 # ──────────────────────────────────────────────
 # 1. GMAIL — authenticate & fetch emails
 # ──────────────────────────────────────────────
@@ -136,7 +156,7 @@ def fetch_recruitment_email_for(service, email: str, subject_prefix: str) -> dic
     Search Gmail for a recruitment email from a specific sender.
     Returns {"subject": ..., "body": ...} or None.
     """
-    query = f'from:{email} subject:"RECRUITMENT Candidatura Spontanea" after:2025/01/25'
+    query = f'from:{email} subject:"RECRUITMENT Candidatura Spontanea" after:2025/10/16'
     log.debug("Gmail query for %s: %s", email, query)
 
     results = service.users().messages().list(userId="me", q=query, maxResults=5).execute()
@@ -215,7 +235,7 @@ def fetch_job_matches(job_id: str, stage_name: str) -> list[dict]:
             stage = match.get("stage") or {}
             if int(stage.get("id", -1)) != stage_id:
                 continue
-            if match.get("is_active", False):
+            if not match.get("is_active", False):
                 continue
             matches.append(match)
         url = data.get("next")
@@ -224,11 +244,24 @@ def fetch_job_matches(job_id: str, stage_name: str) -> list[dict]:
     return matches
 
 
+def _manatal_get(url: str, **kwargs) -> requests.Response:
+    """GET with retry on 429 rate limit."""
+    for attempt in range(5):
+        resp = requests.get(url, headers=_manatal_headers(), timeout=30, **kwargs)
+        if resp.status_code == 429:
+            wait = 2 ** attempt
+            log.warning("  Rate limited (429), retrying in %ds...", wait)
+            time.sleep(wait)
+            continue
+        resp.raise_for_status()
+        return resp
+    resp.raise_for_status()
+    return resp
+
+
 def fetch_candidate(cand_id: int) -> dict:
     """Fetch a single candidate by ID."""
-    resp = requests.get(f"{MANATAL_BASE_URL}/candidates/{cand_id}/", headers=_manatal_headers(), timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    return _manatal_get(f"{MANATAL_BASE_URL}/candidates/{cand_id}/").json()
 
 
 NOTE_TAG = "[GMAIL_SYNC]"
@@ -237,9 +270,7 @@ NOTE_TAG = "[GMAIL_SYNC]"
 def has_gmail_sync_note(candidate_pk: int) -> bool:
     """Check if a candidate already has a note tagged with NOTE_TAG."""
     url = f"{MANATAL_BASE_URL}/candidates/{candidate_pk}/notes/"
-    resp = requests.get(url, headers=_manatal_headers())
-    resp.raise_for_status()
-    data = resp.json()
+    data = _manatal_get(url).json()
 
     notes = data if isinstance(data, list) else data.get("results", [])
     for note in notes:
@@ -260,8 +291,17 @@ def create_candidate_note(candidate_pk: int, note_content: str, subject: str = "
     payload = {
         "info": f"{NOTE_TAG} **{subject}**\n\n{note_content}" if subject else f"{NOTE_TAG}\n\n{note_content}",
     }
-    resp = requests.post(url, headers=_manatal_headers(), json=payload)
-    resp.raise_for_status()
+    for attempt in range(5):
+        resp = requests.post(url, headers=_manatal_headers(), json=payload)
+        if resp.status_code == 429:
+            wait = 2 ** attempt
+            log.warning("  Rate limited (429) on POST, retrying in %ds...", wait)
+            time.sleep(wait)
+            continue
+        resp.raise_for_status()
+        break
+    else:
+        resp.raise_for_status()
     result = resp.json()
     log.info("Note created for candidate %s — note id: %s", candidate_pk, result.get("id"))
     return result
@@ -278,13 +318,42 @@ def main():
     dry_run       = os.getenv("DRY_RUN", "false").lower() in ("1", "true", "yes")
     limit         = int(os.getenv("LIMIT", "0"))
     save_file     = os.getenv("SAVE_FILE", "")
-    job_id        = os.getenv("MANATAL_JOB_TL_ID", "2381880")
-    stage_name    = os.getenv("MANATAL_STAGE", "Nuova candidatura (TL)")
-    subject_prefix = os.getenv("SUBJECT_PREFIX", "RECRUITMENT Candidatura Spontanea [Technical Lead]")
 
-    # Step 1 — Get matches from Manatal job/stage
-    log.info("Fetching matches for job %s, stage '%s'...", job_id, stage_name)
-    matches = fetch_job_matches(job_id, stage_name)
+    # ── Board configurations ──────────────────────────────────────────
+    BOARDS = {
+        "TL": {
+            "job_id": os.getenv("MANATAL_JOB_TL_ID", "2381880"),
+            "stage_names": stage_names_tl,
+            "subject_prefix": "RECRUITMENT Candidatura Spontanea [Technical Lead]",
+        },
+        "DEV": {
+            "job_id": os.getenv("MANATAL_JOB_DEV_ID", "303943"),
+            "stage_names": stage_names_dev,
+            "subject_prefix": "RECRUITMENT Candidatura Spontanea [Mid/Senior Dev]",
+        },
+    }
+
+    # ── Change this to switch board ───────────────────────────────────
+    BOARD = "TL"
+    # ──────────────────────────────────────────────────────────────────
+
+    cfg = BOARDS[BOARD]
+    job_id = cfg["job_id"]
+    stage_names = cfg["stage_names"]
+    subject_prefix = cfg["subject_prefix"]
+
+    # Step 1 — Get matches from all stages
+    matches = []
+    seen_candidates = set()
+    for stage_name in stage_names:
+        log.info("Fetching matches for job %s, stage '%s'...", job_id, stage_name)
+        stage_matches = fetch_job_matches(job_id, stage_name)
+        for m in stage_matches:
+            cid = int(m["candidate"])
+            if cid not in seen_candidates:
+                seen_candidates.add(cid)
+                matches.append(m)
+    log.info("Total unique candidates across all stages: %d", len(matches))
     if not matches:
         log.warning("No matches found.")
         return
@@ -304,6 +373,7 @@ def main():
             break
 
         cand_id = int(match["candidate"])
+        time.sleep(0.5)
         candidate = fetch_candidate(cand_id)
         cand_email = (candidate.get("email") or "").lower().strip()
         cand_name = f"{candidate.get('first_name', '')} {candidate.get('last_name', '')}".strip()
@@ -361,6 +431,7 @@ def main():
 
     created = 0
     for cand_email, cand_id, cand_name, data in matched:
+        time.sleep(0.5)
         try:
             result = create_candidate_note(
                 candidate_pk=cand_id,

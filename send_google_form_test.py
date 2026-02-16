@@ -1,4 +1,3 @@
-import argparse
 import os
 import smtplib
 from email.message import EmailMessage
@@ -73,7 +72,7 @@ def fetch_job_matches(
                 continue
             matches.append(match)
         url = absolute_url(data.get("next"))
-    return matches[:20]
+    return matches
 
 
 def fetch_candidate(headers: Dict[str, str], candidate_id: int) -> Dict[str, object]:
@@ -112,47 +111,32 @@ def send_gmail(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Pipeline di test Manatal -> stage + email Gmail.")
-    parser.add_argument("--job-id", help="ID del job Manatal (fallback: MANATAL_JOB_DEV_ID).")
-
-    parser.add_argument(
-        "--from-stage",
-        default=os.getenv("MANATAL_STAGE_FROM", "Nuova candidatura"),
-        help='Nome dello stage di origine (default: "Nuova candidatura").',
-    )
-    parser.add_argument(
-        "--to-stage",
-        default=os.getenv("MANATAL_STAGE_TO", "Test preliminare"),
-        help='Nome dello stage di destinazione (default: "Test preliminare").',
-    )
-    parser.add_argument(
-        "--email-subject",
-        default=os.getenv("PIPELINE_EMAIL_SUBJECT", "Candidatura Zupit"),
-        help="Oggetto dell'email da inviare.",
-    )
-    parser.add_argument(
-        "--email-body-file",
-        default=os.getenv("SEND_TEST_EMAIL_BODY_FILE"),
-        help="Percorso del file di testo per il corpo email (UTF-8). Se non impostato, usa env SEND_TEST_EMAIL_BODY_FILE.",
-    )
-    args = parser.parse_args()
+    # ── Easy-to-change inputs ──────────────────────────────────────────
+    FROM_STAGE = "Test preliminare (TL)"
+    TO_STAGE = "Colloquio tecnico (TL)"
+    JOB_ID = os.getenv("MANATAL_JOB_TL_ID")
+    EMAIL_SUBJECT = "Candidatura Zupit"
+    EMAIL_BODY_FILE = os.getenv("SEND_TEST_EMAIL_BODY_FILE")
+    GMAIL_USER = os.getenv("GMAIL_USER")
+    GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+    SLEEP_SECONDS = 33
+    # ───────────────────────────────────────────────────────────────────
 
     api_key = os.getenv("MANATAL_API_KEY")
     if not api_key:
         raise SystemExit("MANATAL_API_KEY mancante.")
-    job_id = args.job_id or os.getenv("MANATAL_JOB_DEV_ID")
-    if not job_id:
+    if not JOB_ID:
         raise SystemExit("MANATAL_JOB_DEV_ID mancante.")
 
     headers = build_headers(api_key)
-    stage_map = fetch_stage_ids(headers, [args.from_stage, args.to_stage])
-    from_stage_id = stage_map.get(args.from_stage)
-    to_stage_id = stage_map.get(args.to_stage)
+    stage_map = fetch_stage_ids(headers, [FROM_STAGE, TO_STAGE])
+    from_stage_id = stage_map.get(FROM_STAGE)
+    to_stage_id = stage_map.get(TO_STAGE)
     if from_stage_id is None or to_stage_id is None:
         raise SystemExit(f"Stage non trovati: {stage_map}")
 
-    print(f"Cerco match in '{args.from_stage}' per job {job_id}...")
-    matches = fetch_job_matches(headers, job_id, from_stage_id, stage_name=args.from_stage, page_size=200)
+    print(f"Cerco match in '{FROM_STAGE}' per job {JOB_ID}...")
+    matches = fetch_job_matches(headers, JOB_ID, from_stage_id, stage_name=FROM_STAGE, page_size=200)
     print(f"Trovati {len(matches)} match nello stage di origine.")
 
     selected: List[Tuple[Dict[str, object], Dict[str, object]]] = []
@@ -162,16 +146,14 @@ def main() -> None:
         selected.append((match, candidate))
 
     print(f"Da processare: {len(selected)} candidati.")
-    gmail_user = os.getenv("GMAIL_USER")
-    gmail_app_password = os.getenv("GMAIL_APP_PASSWORD")
-    subject = args.email_subject
-    body_template_path = args.email_body_file
+    gmail_user = GMAIL_USER
+    gmail_app_password = GMAIL_APP_PASSWORD
     body_template: Optional[str] = None
-    if body_template_path:
+    if EMAIL_BODY_FILE:
         try:
-            body_template = Path(body_template_path).read_text(encoding="utf-8")
+            body_template = Path(EMAIL_BODY_FILE).read_text(encoding="utf-8")
         except FileNotFoundError:
-            raise SystemExit("Corpo email mancante: passa --email-body-file o imposta PIPELINE_EMAIL_BODY_FILE.")
+            raise SystemExit("Corpo email mancante: imposta SEND_TEST_EMAIL_BODY_FILE.")
 
     for idx, (match, candidate) in enumerate(selected, start=1):
         cand_fullname = str(candidate.get("full_name") or "").strip().title()
@@ -180,17 +162,17 @@ def main() -> None:
         cand_email = str(candidate.get("email") or "").strip()
         print(f"- Match {match['id']} / candidato #{idx} - {cand_fullname} ({cand_email or '!!! EMAIL MANCANTE !!!'})")
 
-        move_match(headers, int(match["id"]), to_stage_id)
-        print(f"  Spostato in '{args.to_stage}'.")
+        # move_match(headers, int(match["id"]), to_stage_id)
+        # print(f"  Spostato in '{TO_STAGE}'.")
 
         if gmail_user and gmail_app_password and cand_email:
             body = body_template.format(name=cand_first_name)
-            send_gmail(gmail_user, gmail_app_password, cand_email, subject, body)
+            send_gmail(gmail_user, gmail_app_password, cand_email, EMAIL_SUBJECT, body)
             print("  Email inviata.")
         else:
             print("  Email NON inviata (credenziali o email mancanti).")
 
-        time.sleep(78)
+        time.sleep(SLEEP_SECONDS)
 
 
 if __name__ == "__main__":

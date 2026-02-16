@@ -12,6 +12,28 @@ from manatal_service import build_headers, fetch_stage_ids, fetch_job_matches, f
 
 load_dotenv()
 
+# ── Configuration ─────────────────────────────────────────────────────
+BOARDS = {
+    "TL": {
+        "from_stage": "Nuova candidatura (TL)",
+        "job_id": os.getenv("MANATAL_JOB_TL_ID"),
+        "email_subject": "Candidatura Zupit",
+        "email_body_file": os.getenv("DROP_EMAIL_BODY_FILE"),
+        "sleep_seconds": 65,
+    },
+    "DEV": {
+        "from_stage": "Test preliminare (DEV)",
+        "job_id": os.getenv("MANATAL_JOB_DEV_ID"),
+        "email_subject": "Candidatura Zupit",
+        "email_body_file": os.getenv("DROP_EMAIL_BODY_FILE"),
+        "sleep_seconds": 65,
+    },
+}
+
+# ── Change this to switch board ───────────────────────────────────
+BOARD = "TL"
+# ──────────────────────────────────────────────────────────────────
+
 
 def send_gmail(
     user: str,
@@ -32,28 +54,6 @@ def send_gmail(
 
 
 def main() -> None:
-    # ── Board configurations ──────────────────────────────────────────
-    BOARDS = {
-        "TL": {
-            "from_stage": "Nuova candidatura (TL)",
-            "job_id": os.getenv("MANATAL_JOB_TL_ID"),
-            "email_subject": "Candidatura Zupit",
-            "email_body_file": os.getenv("DROP_EMAIL_BODY_FILE"),
-            "sleep_seconds": 65,
-        },
-        "DEV": {
-            "from_stage": "Test preliminare (DEV)",
-            "job_id": os.getenv("MANATAL_JOB_DEV_ID"),
-            "email_subject": "Candidatura Zupit",
-            "email_body_file": os.getenv("DROP_EMAIL_BODY_FILE"),
-            "sleep_seconds": 65,
-        },
-    }
-
-    # ── Change this to switch board ───────────────────────────────────
-    BOARD = "TL"
-    # ──────────────────────────────────────────────────────────────────
-
     cfg = BOARDS[BOARD]
     FROM_STAGE = cfg["from_stage"]
     JOB_ID = cfg["job_id"]

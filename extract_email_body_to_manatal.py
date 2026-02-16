@@ -96,6 +96,24 @@ stage_names_tl   = [
     "Approfondimenti (TL)",
     "Proposta (TL)",
 ]
+
+BOARDS = {
+    "TL": {
+        "job_id": os.getenv("MANATAL_JOB_TL_ID", "2381880"),
+        "stage_names": stage_names_tl,
+        "subject_prefix": "RECRUITMENT Candidatura Spontanea [Technical Lead]",
+    },
+    "DEV": {
+        "job_id": os.getenv("MANATAL_JOB_DEV_ID", "303943"),
+        "stage_names": stage_names_dev,
+        "subject_prefix": "RECRUITMENT Candidatura Spontanea [Mid/Senior Dev]",
+    },
+}
+
+# ── Change this to switch board ───────────────────────────────────
+BOARD = "TL"
+# ──────────────────────────────────────────────────────────────────
+
 # ──────────────────────────────────────────────
 # 1. GMAIL — authenticate & fetch emails
 # ──────────────────────────────────────────────
@@ -234,24 +252,6 @@ def main():
     dry_run       = os.getenv("DRY_RUN", "false").lower() in ("1", "true", "yes")
     limit         = int(os.getenv("LIMIT", "0"))
     save_file     = os.getenv("SAVE_FILE", "")
-
-    # ── Board configurations ──────────────────────────────────────────
-    BOARDS = {
-        "TL": {
-            "job_id": os.getenv("MANATAL_JOB_TL_ID", "2381880"),
-            "stage_names": stage_names_tl,
-            "subject_prefix": "RECRUITMENT Candidatura Spontanea [Technical Lead]",
-        },
-        "DEV": {
-            "job_id": os.getenv("MANATAL_JOB_DEV_ID", "303943"),
-            "stage_names": stage_names_dev,
-            "subject_prefix": "RECRUITMENT Candidatura Spontanea [Mid/Senior Dev]",
-        },
-    }
-
-    # ── Change this to switch board ───────────────────────────────────
-    BOARD = "TL"
-    # ──────────────────────────────────────────────────────────────────
 
     cfg = BOARDS[BOARD]
     job_id = cfg["job_id"]

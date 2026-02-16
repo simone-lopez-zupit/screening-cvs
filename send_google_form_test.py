@@ -12,6 +12,17 @@ from manatal_service import build_headers, fetch_stage_ids, fetch_job_matches, f
 
 load_dotenv()
 
+# ── Configuration ─────────────────────────────────────────────────────
+FROM_STAGE      = "Test preliminare (TL)"
+TO_STAGE        = "Colloquio tecnico (TL)"
+JOB_ID          = os.getenv("MANATAL_JOB_TL_ID")
+EMAIL_SUBJECT   = "Candidatura Zupit"
+EMAIL_BODY_FILE = os.getenv("SEND_TEST_EMAIL_BODY_FILE")
+GMAIL_USER      = os.getenv("GMAIL_USER")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+SLEEP_SECONDS   = 33
+# ──────────────────────────────────────────────────────────────────────
+
 
 def send_gmail(
     user: str,
@@ -32,22 +43,11 @@ def send_gmail(
 
 
 def main() -> None:
-    # ── Easy-to-change inputs ──────────────────────────────────────────
-    FROM_STAGE = "Test preliminare (TL)"
-    TO_STAGE = "Colloquio tecnico (TL)"
-    JOB_ID = os.getenv("MANATAL_JOB_TL_ID")
-    EMAIL_SUBJECT = "Candidatura Zupit"
-    EMAIL_BODY_FILE = os.getenv("SEND_TEST_EMAIL_BODY_FILE")
-    GMAIL_USER = os.getenv("GMAIL_USER")
-    GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
-    SLEEP_SECONDS = 33
-    # ───────────────────────────────────────────────────────────────────
-
     api_key = os.getenv("MANATAL_API_KEY")
     if not api_key:
         raise SystemExit("MANATAL_API_KEY mancante.")
     if not JOB_ID:
-        raise SystemExit("MANATAL_JOB_DEV_ID mancante.")
+        raise SystemExit("MANATAL_JOB_TL_ID mancante.")
 
     headers = build_headers(api_key)
     stage_map = fetch_stage_ids(headers, [FROM_STAGE, TO_STAGE])
@@ -67,8 +67,6 @@ def main() -> None:
         selected.append((match, candidate))
 
     print(f"Da processare: {len(selected)} candidati.")
-    gmail_user = GMAIL_USER
-    gmail_app_password = GMAIL_APP_PASSWORD
     body_template: Optional[str] = None
     if EMAIL_BODY_FILE:
         try:
@@ -86,9 +84,9 @@ def main() -> None:
         # move_match(headers, int(match["id"]), to_stage_id)
         # print(f"  Spostato in '{TO_STAGE}'.")
 
-        if gmail_user and gmail_app_password and cand_email:
+        if GMAIL_USER and GMAIL_APP_PASSWORD and cand_email:
             body = body_template.format(name=cand_first_name)
-            send_gmail(gmail_user, gmail_app_password, cand_email, EMAIL_SUBJECT, body)
+            send_gmail(GMAIL_USER, GMAIL_APP_PASSWORD, cand_email, EMAIL_SUBJECT, body)
             print("  Email inviata.")
         else:
             print("  Email NON inviata (credenziali o email mancanti).")

@@ -29,6 +29,16 @@ from manatal_service import (
 
 load_dotenv()
 
+# ── Configuration ─────────────────────────────────────────────────────
+JOB_ID        = 303943  # DEV
+# JOB_ID      = 3349722  # MAUI
+FROM_STAGE    = "Test preliminare"
+TO_STAGE      = "Chiacchierata conoscitiva"
+EMAIL_SUBJECT = "Candidatura Zupit"
+NON_FARE_COSE = True
+SLEEP_SECONDS = 85
+# ──────────────────────────────────────────────────────────────────────
+
 
 def format_df(df: pd.DataFrame):
     df['score'] = (
@@ -149,14 +159,8 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # MANATAL
-    job_id = 303943 # DEV
-    # job_id = 3349722 # MAUI
-
     api_key = get_manatal_credentials()
     headers = build_headers(api_key)
-    from_stage = "Test preliminare"
-    to_stage = "Chiacchierata conoscitiva"
 
     # TESTDOME
     testdome_client_id = os.getenv("TEST_DOME_CLIENT_ID")
@@ -181,7 +185,6 @@ def main() -> None:
     # GMAIL
     gmail_user = os.getenv("GMAIL_USER")
     gmail_app_password = os.getenv("GMAIL_APP_PASSWORD")
-    email_subject = "Candidatura Zupit"
 
     body_chiacchierata_template_path = args.email_chiacchierata_body_file
     body_chiacchierata_template = Path(body_chiacchierata_template_path).read_text(encoding="utf-8")
@@ -189,12 +192,12 @@ def main() -> None:
     body_drop_template = Path(body_drop_template_path).read_text(encoding="utf-8")
 
     print(f"Getting map stages...")
-    stage_map = fetch_stage_ids(headers, [from_stage, to_stage])
-    from_stage_id = stage_map.get(from_stage)
-    to_stage_id = stage_map.get(to_stage)
+    stage_map = fetch_stage_ids(headers, [FROM_STAGE, TO_STAGE])
+    from_stage_id = stage_map.get(FROM_STAGE)
+    to_stage_id = stage_map.get(TO_STAGE)
 
-    print(f"Cerco match in '{from_stage}' per job {job_id}...")
-    matches = fetch_job_matches(headers, job_id, from_stage_id, stage_name=from_stage, page_size=200)
+    print(f"Cerco match in '{FROM_STAGE}' per job {JOB_ID}...")
+    matches = fetch_job_matches(headers, JOB_ID, from_stage_id, stage_name=FROM_STAGE, page_size=200)
     print(f"Trovati {len(matches)} match nello stage di origine.")
 
     print(f"Getting candidates...")
@@ -358,7 +361,7 @@ def main() -> None:
     # extract_possible_cheating(df)
     # extract_to_evaluate(df)
 
-    non_fare_cose = True
+    non_fare_cose = NON_FARE_COSE
 
     passati_80 = 0
     falliti_60 = 0
@@ -443,12 +446,12 @@ def main() -> None:
                 continue
 
             move_match(headers, match_id, to_stage_id)
-            print(f"  Test passato -> spostato in '{to_stage}'.")
+            print(f"  Test passato -> spostato in '{TO_STAGE}'.")
 
             if gmail_user and gmail_app_password and cand_email:
                 body = body_chiacchierata_template.format(name=cand_first_name)
-                send_gmail(gmail_user, gmail_app_password, cand_email, email_subject, body)
-                time.sleep(85)
+                send_gmail(gmail_user, gmail_app_password, cand_email, EMAIL_SUBJECT, body)
+                time.sleep(SLEEP_SECONDS)
                 print("  Email chiacchierata inviata.")
             else:
                 print("  Email NON inviata (credenziali o email mancanti).")
@@ -465,8 +468,8 @@ def main() -> None:
 
             if gmail_user and gmail_app_password and cand_email:
                 body = body_drop_template.format(name=cand_first_name)
-                send_gmail(gmail_user, gmail_app_password, cand_email, email_subject, body)
-                time.sleep(85)
+                send_gmail(gmail_user, gmail_app_password, cand_email, EMAIL_SUBJECT, body)
+                time.sleep(SLEEP_SECONDS)
                 print("  Email drop inviata.")
             else:
                 print("  Email NON inviata (credenziali o email mancanti).")

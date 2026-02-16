@@ -9,6 +9,9 @@ from openpyxl import Workbook
 
 from manatal_service import build_headers, get_all_matches
 
+# ── Configuration ─────────────────────────────────────────────────────
+JOB_ID = "303943"  # DEV
+
 OUTPUT_FIELDS = [
     "stage_name",
     "stage_rank",
@@ -95,7 +98,7 @@ def main() -> None:
     headers = build_headers(api_key)
 
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    all_matches = get_all_matches(headers=headers)
+    all_matches = get_all_matches(headers=headers, job_id=JOB_ID)
 
     date_ranges = [
         (datetime(2022, 1, 1), datetime.today()), # full range

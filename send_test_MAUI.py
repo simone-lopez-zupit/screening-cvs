@@ -13,6 +13,14 @@ from manatal_service import build_headers, fetch_stage_ids, fetch_job_matches, f
 
 load_dotenv()
 
+# ── Configuration (defaults, overridable via CLI args) ────────────────
+DEFAULT_FROM_STAGE       = os.getenv("MANATAL_STAGE_FROM", "Nuova candidatura")
+DEFAULT_TO_STAGE         = os.getenv("MANATAL_STAGE_TO", "Test preliminare")
+DEFAULT_EMAIL_SUBJECT    = os.getenv("PIPELINE_EMAIL_SUBJECT", "Candidatura Zupit")
+DEFAULT_EMAIL_BODY_FILE  = os.getenv("SEND_TEST_EMAIL_MAUI_BODY_FILE")
+SLEEP_SECONDS            = 78
+# ──────────────────────────────────────────────────────────────────────
+
 
 def send_gmail(
     user: str,
@@ -38,22 +46,22 @@ def main() -> None:
 
     parser.add_argument(
         "--from-stage",
-        default=os.getenv("MANATAL_STAGE_FROM", "Nuova candidatura"),
+        default=DEFAULT_FROM_STAGE,
         help='Nome dello stage di origine (default: "Nuova candidatura").',
     )
     parser.add_argument(
         "--to-stage",
-        default=os.getenv("MANATAL_STAGE_TO", "Test preliminare"),
+        default=DEFAULT_TO_STAGE,
         help='Nome dello stage di destinazione (default: "Test preliminare").',
     )
     parser.add_argument(
         "--email-subject",
-        default=os.getenv("PIPELINE_EMAIL_SUBJECT", "Candidatura Zupit"),
+        default=DEFAULT_EMAIL_SUBJECT,
         help="Oggetto dell'email da inviare.",
     )
     parser.add_argument(
         "--email-maui-body-file",
-        default=os.getenv("SEND_TEST_EMAIL_MAUI_BODY_FILE"),
+        default=DEFAULT_EMAIL_BODY_FILE,
         help="Percorso del file di testo per il corpo email (UTF-8). Se non impostato, usa env SEND_TEST_EMAIL_MAUI_BODY_FILE.",
     )
     args = parser.parse_args()
@@ -111,7 +119,7 @@ def main() -> None:
         else:
             print("  Email NON inviata (credenziali o email mancanti).")
 
-        time.sleep(78)
+        time.sleep(SLEEP_SECONDS)
 
 
 if __name__ == "__main__":

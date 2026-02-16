@@ -114,7 +114,7 @@ def main() -> None:
     # ── Board configurations ──────────────────────────────────────────
     BOARDS = {
         "TL": {
-            "from_stage": "Test preliminare (TL)",
+            "from_stage": "Nuova candidatura (TL)",
             "job_id": os.getenv("MANATAL_JOB_TL_ID"),
             "email_subject": "Candidatura Zupit",
             "email_body_file": os.getenv("DROP_EMAIL_BODY_FILE"),

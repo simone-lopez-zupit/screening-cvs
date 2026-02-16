@@ -4,11 +4,10 @@ from itertools import groupby
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import requests
 from dotenv import load_dotenv
 from openpyxl import Workbook
 
-API_BASE = "https://api.manatal.com/open/v3"
+from manatal_service import build_headers, get_all_matches
 
 OUTPUT_FIELDS = [
     "stage_name",
@@ -21,38 +20,6 @@ OUTPUT_FIELDS = [
     "perc_drop",
     "perc_drop_cum",
 ]
-
-def build_headers(raw_token: str) -> Dict[str, str]:
-    token = raw_token.strip()
-    if not token.lower().startswith("token "):
-        token = f"Token {token}"
-    return {"Authorization": token, "Content-Type": "application/json"}
-
-
-def absolute_url(url: Optional[str]) -> Optional[str]:
-    if not url:
-        return None
-    if url.startswith("http"):
-        return url
-    return f"{API_BASE.rstrip('/')}/{url.lstrip('/')}"
-
-
-def get_all_matches(
-        headers: Dict[str, str],
-        job_id: str = 303943, # DEV
-        page_size=200) -> List[Dict[str, str]]:
-
-    matches_raw: List[Dict[str, str]] = []
-    url_job_matches: Optional[str] = f"{API_BASE}/jobs/{job_id}/matches/?page_size={page_size}"
-    while url_job_matches:
-        resp = requests.get(url_job_matches, headers=headers, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        matches_raw.extend(data.get("results", []))  # Accumulate here
-        url_job_matches = absolute_url(data.get("next"))
-
-    return matches_raw
-
 
 def parse_updated_at(match):
     updated_at = match.get("updated_at")
@@ -76,7 +43,7 @@ def get_matches_grouped_by_stage(
     matches_sorted = sorted(matches_filtered, key=lambda match: match.get("job_pipeline_stage").get("rank"))
     matches_grouped = {stage: list(group)
                        for stage, group in groupby(matches_sorted,
-                                                   key=lambda match: match.get("job_pipeline_stage").get("name"))}
+                                                    key=lambda match: match.get("job_pipeline_stage").get("name"))}
 
     matches_left = len(matches_filtered)
 

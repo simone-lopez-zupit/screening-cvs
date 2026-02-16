@@ -33,6 +33,16 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
+from manatal_service import (
+    build_headers,
+    fetch_job_matches as _service_fetch_job_matches,
+    fetch_stage_ids,
+    fetch_candidate,
+    has_gmail_sync_note,
+    create_candidate_note,
+    NOTE_TAG,
+)
+
 # ──────────────────────────────────────────────
 # LOGGING — daily rotation, 7-day retention
 # ──────────────────────────────────────────────
@@ -65,9 +75,6 @@ GMAIL_CREDENTIALS_FILE = "google-oauth-credentials.json"   # OAuth client-secret
 GMAIL_TOKEN_FILE       = "token.json"         # cached refresh token
 GMAIL_SCOPES           = ["https://www.googleapis.com/auth/gmail.readonly"]
 GMAIL_MAX_RESULTS      = 50                   # max emails to fetch per run
-
-MANATAL_API_KEY        = os.getenv("MANATAL_API_KEY", "")
-MANATAL_BASE_URL       = "https://api.manatal.com/open/v3"
 
 stage_names_dev   = [
     "Nuova candidatura",
@@ -194,29 +201,11 @@ def fetch_recruitment_email_for(service, email: str, subject_prefix: str) -> dic
 # ──────────────────────────────────────────────
 # 2. MANATAL — look up candidate & create note
 # ──────────────────────────────────────────────
-def _manatal_headers() -> dict:
-    return {
-        "Authorization": f"Token {MANATAL_API_KEY}",
-        "Content-Type": "application/json",
-    }
 
-
-def fetch_job_matches(job_id: str, stage_name: str) -> list[dict]:
+def _fetch_job_matches_for_stage(headers: dict, job_id: str, stage_name: str) -> list[dict]:
     """Fetch all active matches for a job in a given stage."""
-    # First, find the stage ID
-    url = f"{MANATAL_BASE_URL}/match-stages/?page_size=200"
-    stage_id = None
-    while url:
-        resp = requests.get(url, headers=_manatal_headers(), timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        for stage in data.get("results", []):
-            if str(stage.get("name") or "").strip().lower() == stage_name.strip().lower():
-                stage_id = int(stage["id"])
-                break
-        if stage_id:
-            break
-        url = data.get("next")
+    stage_map = fetch_stage_ids(headers, [stage_name])
+    stage_id = stage_map.get(stage_name)
 
     if not stage_id:
         log.error("Stage '%s' not found in Manatal.", stage_name)
@@ -224,96 +213,23 @@ def fetch_job_matches(job_id: str, stage_name: str) -> list[dict]:
 
     log.info("Stage '%s' → id %d", stage_name, stage_id)
 
-    # Fetch matches in that stage
-    matches = []
-    url = f"{MANATAL_BASE_URL}/jobs/{job_id}/matches/?page_size=200"
-    while url:
-        resp = requests.get(url, headers=_manatal_headers(), timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        for match in data.get("results", []):
-            stage = match.get("stage") or {}
-            if int(stage.get("id", -1)) != stage_id:
-                continue
-            if not match.get("is_active", False):
-                continue
-            matches.append(match)
-        url = data.get("next")
-
+    matches = _service_fetch_job_matches(
+        headers, job_id, stage_id, stage_name=stage_name, page_size=200, only_active=True,
+    )
     log.info("Found %d matches in '%s' for job %s", len(matches), stage_name, job_id)
     return matches
-
-
-def _manatal_get(url: str, **kwargs) -> requests.Response:
-    """GET with retry on 429 rate limit."""
-    for attempt in range(5):
-        resp = requests.get(url, headers=_manatal_headers(), timeout=30, **kwargs)
-        if resp.status_code == 429:
-            wait = 2 ** attempt
-            log.warning("  Rate limited (429), retrying in %ds...", wait)
-            time.sleep(wait)
-            continue
-        resp.raise_for_status()
-        return resp
-    resp.raise_for_status()
-    return resp
-
-
-def fetch_candidate(cand_id: int) -> dict:
-    """Fetch a single candidate by ID."""
-    return _manatal_get(f"{MANATAL_BASE_URL}/candidates/{cand_id}/").json()
-
-
-NOTE_TAG = "[GMAIL_SYNC]"
-
-
-def has_gmail_sync_note(candidate_pk: int) -> bool:
-    """Check if a candidate already has a note tagged with NOTE_TAG."""
-    url = f"{MANATAL_BASE_URL}/candidates/{candidate_pk}/notes/"
-    data = _manatal_get(url).json()
-
-    notes = data if isinstance(data, list) else data.get("results", [])
-    for note in notes:
-        note_text = note.get("note") or note.get("text") or note.get("info") or ""
-        if NOTE_TAG in note_text:
-            log.debug("  Candidate %s already has a %s note (id: %s)", candidate_pk, NOTE_TAG, note.get("id"))
-            return True
-    return False
-
-
-def create_candidate_note(candidate_pk: int, note_content: str, subject: str = "") -> dict:
-    """
-    POST a note on a Manatal candidate.
-    Endpoint: POST /open/v3/candidates/{candidate_pk}/notes/
-    """
-    log.debug("Creating note for candidate %s (body length: %d chars)", candidate_pk, len(note_content))
-    url = f"{MANATAL_BASE_URL}/candidates/{candidate_pk}/notes/"
-    payload = {
-        "info": f"{NOTE_TAG} **{subject}**\n\n{note_content}" if subject else f"{NOTE_TAG}\n\n{note_content}",
-    }
-    for attempt in range(5):
-        resp = requests.post(url, headers=_manatal_headers(), json=payload)
-        if resp.status_code == 429:
-            wait = 2 ** attempt
-            log.warning("  Rate limited (429) on POST, retrying in %ds...", wait)
-            time.sleep(wait)
-            continue
-        resp.raise_for_status()
-        break
-    else:
-        resp.raise_for_status()
-    result = resp.json()
-    log.info("Note created for candidate %s — note id: %s", candidate_pk, result.get("id"))
-    return result
 
 
 # ──────────────────────────────────────────────
 # 3. MAIN — glue it all together
 # ──────────────────────────────────────────────
 def main():
-    if not MANATAL_API_KEY:
+    manatal_api_key = os.getenv("MANATAL_API_KEY", "")
+    if not manatal_api_key:
         log.error("MANATAL_API_KEY env var not set.")
         return
+
+    headers = build_headers(manatal_api_key)
 
     dry_run       = os.getenv("DRY_RUN", "false").lower() in ("1", "true", "yes")
     limit         = int(os.getenv("LIMIT", "0"))
@@ -347,7 +263,7 @@ def main():
     seen_candidates = set()
     for stage_name in stage_names:
         log.info("Fetching matches for job %s, stage '%s'...", job_id, stage_name)
-        stage_matches = fetch_job_matches(job_id, stage_name)
+        stage_matches = _fetch_job_matches_for_stage(headers, job_id, stage_name)
         for m in stage_matches:
             cid = int(m["candidate"])
             if cid not in seen_candidates:
@@ -374,7 +290,7 @@ def main():
 
         cand_id = int(match["candidate"])
         time.sleep(0.5)
-        candidate = fetch_candidate(cand_id)
+        candidate = fetch_candidate(headers, cand_id)
         cand_email = (candidate.get("email") or "").lower().strip()
         cand_name = f"{candidate.get('first_name', '')} {candidate.get('last_name', '')}".strip()
 
@@ -386,7 +302,7 @@ def main():
         log.info("Processing %s (%s)...", cand_name, cand_email)
 
         # Check if note already exists
-        if has_gmail_sync_note(cand_id):
+        if has_gmail_sync_note(headers, cand_id):
             log.info("  SKIP — already has a %s note", NOTE_TAG)
             continue
 
@@ -434,6 +350,7 @@ def main():
         time.sleep(0.5)
         try:
             result = create_candidate_note(
+                headers=headers,
                 candidate_pk=cand_id,
                 note_content=data["body"],
                 subject=data["subject"],

@@ -4,93 +4,14 @@ import smtplib
 from email.message import EmailMessage
 from pathlib import Path
 import time
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
-import requests
 from dotenv import load_dotenv
+
+from manatal_service import build_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, move_match
 
 
 load_dotenv()
-
-API_BASE = "https://api.manatal.com/open/v3"
-
-
-def build_headers(raw_token: str) -> Dict[str, str]:
-    token = raw_token.strip()
-    if not token.lower().startswith("token "):
-        token = f"Token {token}"
-    return {"Authorization": token, "Content-Type": "application/json"}
-
-
-def absolute_url(url: Optional[str]) -> Optional[str]:
-    if not url:
-        return None
-    if url.startswith("http"):
-        return url
-    return f"{API_BASE.rstrip('/')}/{url.lstrip('/')}"
-
-
-def fetch_stage_ids(headers: Dict[str, str], stage_names: Iterable[str]) -> Dict[str, int]:
-    wanted = {name.lower(): name for name in stage_names}
-    found: Dict[str, int] = {}
-
-    url: Optional[str] = f"{API_BASE}/match-stages/?page_size=200"
-    while url:
-        resp = requests.get(url, headers=headers, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        for stage in data.get("results", []):
-            name = str(stage.get("name") or "")
-            key = name.lower()
-            if key in wanted and wanted[key] not in found:
-                found[wanted[key]] = int(stage["id"])
-        url = absolute_url(data.get("next"))
-
-    return found
-
-
-def fetch_job_matches(
-    headers: Dict[str, str],
-    job_id: str,
-    stage_id: int,
-    stage_name: Optional[str] = None,
-    page_size: int = 100,
-    only_active: bool = True,
-) -> List[Dict[str, object]]:
-    matches: List[Dict[str, object]] = []
-    url: Optional[str] = f"{API_BASE}/jobs/{job_id}/matches/?page_size={page_size}"
-    while url:
-        resp = requests.get(url, headers=headers, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        for match in data.get("results", []):
-            stage = match.get("stage") or {}
-            if int(stage.get("id", -1)) != stage_id:
-                continue
-            if stage_name and str(stage.get("name") or "").strip().lower() != stage_name.strip().lower():
-                continue
-            if only_active and not match.get("is_active", False):
-                continue
-            matches.append(match)
-        url = absolute_url(data.get("next"))
-    return matches[:25]
-
-
-def fetch_candidate(headers: Dict[str, str], candidate_id: int) -> Dict[str, object]:
-    resp = requests.get(f"{API_BASE}/candidates/{candidate_id}/", headers=headers, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
-
-
-def move_match(headers: Dict[str, str], match_id: int, stage_id: int) -> None:
-    payload = {"stage": {"id": stage_id}}
-    resp = requests.patch(
-        f"{API_BASE}/matches/{match_id}/",
-        headers=headers,
-        json=payload,
-        timeout=30,
-    )
-    resp.raise_for_status()
 
 
 def send_gmail(

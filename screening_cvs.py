@@ -15,23 +15,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import requests
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill
 from openai import OpenAI
 from dotenv import load_dotenv
 
+from manatal_service import build_headers, get_candidate_info
+
 
 load_dotenv()
-
-API_BASE = "https://api.manatal.com/open/v3"
-
-
-def build_headers(raw_token: str) -> Dict[str, str]:
-    token = raw_token.strip()
-    if not token.lower().startswith("token "):
-        token = f"Token {token}"
-    return {"Authorization": token, "Content-Type": "application/json"}
 
 
 SYSTEM_PROMPT = (
@@ -188,35 +180,6 @@ def _unique_destination(dest_dir: Path, original_name: str) -> Path:
         if not candidate.exists():
             return candidate
         counter += 1
-
-
-def get_candidate_info(headers: Dict[str, str], email: str):
-    url_candidates: Optional[str] = f"{API_BASE}/candidates/?email={email}"
-
-    resp = requests.get(url_candidates, headers=headers, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-
-    candidates = data.get("results", [])
-
-    base_link = "app.manatal.com/candidates/"
-
-    if len(candidates) == 0:
-        return "", ""
-    if len(candidates) > 1:
-        return "SISTEMARE", "DUPLICATI"
-
-    cand_id = candidates[0].get("id")
-    url_matches: Optional[str] = f"{API_BASE}/candidates/{cand_id}/matches/"
-
-    resp = requests.get(url_matches, headers=headers, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    matches = data.get("results", [])
-
-    matches = (f"{match.get('stage').get("name")}" for match in matches)
-
-    return f"=HYPERLINK(\"{base_link}{cand_id}\")", "&CHAR(10)&".join(matches)
 
 
 def move_duplicates(duplicates: Dict[str, List[Path]], target_dir: Path) -> None:

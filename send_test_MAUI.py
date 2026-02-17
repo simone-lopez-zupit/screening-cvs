@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 
 from services.gmail_service import send_gmail
-from services.manatal_service import get_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, move_match
+from services.manatal_service import build_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, move_match
 
 
 load_dotenv()
@@ -49,7 +49,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    headers = get_headers()
+    headers = build_headers()
     job_id = args.job_id or os.getenv("MANATAL_JOB_MAUI_ID")
     if not job_id:
         raise SystemExit("MANATAL_JOB_MAUI_ID mancante.")

@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 
 from services.gmail_service import send_gmail
-from services.manatal_service import get_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, drop_candidate
+from services.manatal_service import build_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, drop_candidate
 
 load_dotenv()
 
@@ -20,7 +20,7 @@ BOARDS = {
         "sleep_seconds": 65,
     },
     "DEV": {
-        "from_stage": "Test preliminare (DEV)",
+        "from_stage": "Test preliminare",
         "job_id": os.getenv("MANATAL_JOB_DEV_ID"),
         "email_subject": "Candidatura Zupit",
         "email_body_file": os.getenv("DROP_EMAIL_BODY_FILE"),
@@ -32,7 +32,7 @@ GMAIL_USER         = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 
 # ── Change this to switch board ───────────────────────────────────
-BOARD = "TL"
+BOARD = "DEV"
 # ──────────────────────────────────────────────────────────────────
 
 
@@ -44,7 +44,7 @@ def main() -> None:
     EMAIL_BODY_FILE = cfg["email_body_file"]
     SLEEP_SECONDS = cfg["sleep_seconds"]
 
-    headers = get_headers()
+    headers = build_headers()
 
     stage_map = fetch_stage_ids(headers, [FROM_STAGE])
     from_stage_id = stage_map.get(FROM_STAGE)

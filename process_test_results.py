@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 
 from services.gmail_service import send_gmail
 from services.manatal_service import (
-    get_headers,
+    build_headers,
     fetch_stage_ids,
     fetch_all_job_matches,
     fetch_job_matches,
@@ -134,7 +134,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    headers = get_headers()
+    headers = build_headers()
 
     # TESTDOME
     testdome_client_id = os.getenv("TEST_DOME_CLIENT_ID")

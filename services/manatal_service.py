@@ -12,22 +12,18 @@ API_BASE = "https://api.manatal.com/open/v3"
 
 NOTE_TAG = "[GMAIL_SYNC]"
 
-MANATAL_API_KEY = os.getenv("MANATAL_API_KEY", "")
+def _get_api_key() -> str:
+    return os.getenv("MANATAL_API_KEY", "")
 
 
 # ── Internal helpers ─────────────────────────────────────────────────
 
-def build_headers(raw_token: str) -> Dict[str, str]:
-    token = raw_token.strip()
+def build_headers() -> Dict[str, str]:
+    token = _get_api_key().strip()
     if not token.lower().startswith("token "):
         token = f"Token {token}"
     return {"Authorization": token, "Content-Type": "application/json"}
 
-
-def get_headers() -> Dict[str, str]:
-    if not MANATAL_API_KEY:
-        raise SystemExit("MANATAL_API_KEY mancante.")
-    return build_headers(MANATAL_API_KEY)
 
 
 def absolute_url(url: Optional[str]) -> Optional[str]:

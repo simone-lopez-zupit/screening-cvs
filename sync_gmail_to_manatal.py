@@ -11,7 +11,7 @@ import requests
 
 from services.gmail_service import get_gmail_service, fetch_recruitment_email_for
 from services.manatal_service import (
-    get_headers,
+    build_headers,
     fetch_job_matches as _service_fetch_job_matches,
     fetch_stage_ids,
     fetch_candidate,
@@ -112,7 +112,7 @@ def _fetch_job_matches_for_stage(headers: dict, job_id: str, stage_name: str) ->
 # 3. MAIN — glue it all together
 # ──────────────────────────────────────────────
 def main():
-    headers = get_headers()
+    headers = build_headers()
 
     dry_run       = os.getenv("DRY_RUN", "false").lower() in ("1", "true", "yes")
     limit         = int(os.getenv("LIMIT", "0"))

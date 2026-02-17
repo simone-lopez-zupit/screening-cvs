@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 
 from services.gmail_service import send_gmail
-from services.manatal_service import get_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, move_match
+from services.manatal_service import build_headers, fetch_stage_ids, fetch_job_matches, fetch_candidate, move_match
 
 
 load_dotenv()
@@ -27,7 +27,7 @@ def main() -> None:
     if not JOB_ID:
         raise SystemExit("MANATAL_JOB_TL_ID mancante.")
 
-    headers = get_headers()
+    headers = build_headers()
     stage_map = fetch_stage_ids(headers, [FROM_STAGE, TO_STAGE])
     from_stage_id = stage_map.get(FROM_STAGE)
     to_stage_id = stage_map.get(TO_STAGE)

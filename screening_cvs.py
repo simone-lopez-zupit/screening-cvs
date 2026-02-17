@@ -20,7 +20,7 @@ from openpyxl.styles import PatternFill
 from openai import OpenAI
 from dotenv import load_dotenv
 
-from services.manatal_service import get_headers, get_candidate_info
+from services.manatal_service import build_headers, get_candidate_info
 
 
 load_dotenv()
@@ -349,7 +349,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    headers = get_headers()
+    headers = build_headers()
 
     input_dir = Path(args.input_dir)
     if not input_dir.is_dir():

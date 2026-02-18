@@ -17,8 +17,8 @@ from googleapiclient.discovery import build
 log = logging.getLogger("gmail_service")
 
 # ── Configuration ─────────────────────────────────────────────────────
-GMAIL_CREDENTIALS_FILE = "google-oauth-credentials.json"
-GMAIL_TOKEN_FILE       = "token.json"
+GMAIL_CREDENTIALS_FILE = "config/google-oauth-credentials.json"
+GMAIL_TOKEN_FILE       = "config/token.json"
 GMAIL_SCOPES           = ["https://www.googleapis.com/auth/gmail.readonly"]
 GMAIL_MAX_RESULTS      = 50
 

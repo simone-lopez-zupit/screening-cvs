@@ -58,7 +58,7 @@ PEOPLE = {
 def build_file_title(nome: str) -> str:
     return f"{nome} - Peer review - result"
 
-SERVICE_ACCOUNT_FILE = "google-credentials.json"
+SERVICE_ACCOUNT_FILE = "config/google-credentials.json"
 TEMPLATE_SPREADSHEET_ID = "1L1z9NEBcv48ac9Monj9cFZQINkzkVhXMuetaEC2GqW4"
 DESTINATION_FOLDER_ID = "1SM74i01YyOff_ErFLKiJQacns62FGvrS"
 

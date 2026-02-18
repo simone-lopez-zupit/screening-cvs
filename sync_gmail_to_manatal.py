@@ -4,9 +4,6 @@ import os
 import time
 
 from dotenv import load_dotenv
-
-load_dotenv()
-
 import requests
 
 from services.gmail_service import get_gmail_service, fetch_recruitment_email_for
@@ -18,7 +15,31 @@ from services.manatal_service import (
     has_gmail_sync_note,
     create_candidate_note,
     NOTE_TAG,
+    STAGE_NAMES_DEV,
+    STAGE_NAMES_TL,
 )
+
+load_dotenv()
+
+# ──────────────────────────────────────────────
+# CONFIGURATION
+# ──────────────────────────────────────────────
+BOARDS = {
+    "TL": {
+        "job_id": os.getenv("MANATAL_JOB_TL_ID", "2381880"),
+        "stage_names": STAGE_NAMES_TL,
+        "subject_prefix": "RECRUITMENT Candidatura Spontanea [Technical Lead]",
+    },
+    "DEV": {
+        "job_id": os.getenv("MANATAL_JOB_DEV_ID", "303943"),
+        "stage_names": STAGE_NAMES_DEV,
+        "subject_prefix": "RECRUITMENT Candidatura Spontanea [Mid/Senior Dev]",
+    },
+}
+
+# ── Change this to switch board ───────────────────────────────────
+BOARD = "DEV"
+# ──────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────
 # LOGGING — daily rotation, 7-day retention
@@ -44,47 +65,6 @@ _console_handler.setFormatter(logging.Formatter("%(levelname)-8s  %(message)s"))
 
 log.addHandler(_file_handler)
 log.addHandler(_console_handler)
-
-# ──────────────────────────────────────────────
-# CONFIGURATION
-# ──────────────────────────────────────────────
-stage_names_dev   = [
-    "Nuova candidatura",
-    "Interessante - per futuro",
-    "Test preliminare",
-    "Chiacchierata conoscitiva",
-    "Feedback chiacchierata conoscitiva",
-    "Colloquio tecnico",
-    "Live coding",
-]
-stage_names_tl   = [
-    "Nuova candidatura (TL)",
-    "Interessante - per futuro (TL)",
-    "Test preliminare (TL)",
-    "Chiacchierata conoscitiva (TL)",
-    "Feedback chiacchierata conoscitiva (TL)",
-    "Colloquio tecnico (TL)",
-    "Test pratico chiacchierata con FD (TL)",
-    "Approfondimenti (TL)",
-    "Proposta (TL)",
-]
-
-BOARDS = {
-    "TL": {
-        "job_id": os.getenv("MANATAL_JOB_TL_ID", "2381880"),
-        "stage_names": stage_names_tl,
-        "subject_prefix": "RECRUITMENT Candidatura Spontanea [Technical Lead]",
-    },
-    "DEV": {
-        "job_id": os.getenv("MANATAL_JOB_DEV_ID", "303943"),
-        "stage_names": stage_names_dev,
-        "subject_prefix": "RECRUITMENT Candidatura Spontanea [Mid/Senior Dev]",
-    },
-}
-
-# ── Change this to switch board ───────────────────────────────────
-BOARD = "TL"
-# ──────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────
 # MANATAL — look up candidate & create note

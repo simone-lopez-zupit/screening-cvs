@@ -12,6 +12,28 @@ API_BASE = "https://api.manatal.com/open/v3"
 
 NOTE_TAG = "[GMAIL_SYNC]"
 
+STAGE_NAMES_DEV = [
+    "Nuova candidatura",
+    "Interessante - per futuro",
+    "Test preliminare",
+    "Chiacchierata conoscitiva",
+    "Feedback chiacchierata conoscitiva",
+    "Colloquio tecnico",
+    "Live coding",
+]
+
+STAGE_NAMES_TL = [
+    "Nuova candidatura (TL)",
+    "Interessante - per futuro (TL)",
+    "Test preliminare (TL)",
+    "Chiacchierata conoscitiva (TL)",
+    "Feedback chiacchierata conoscitiva (TL)",
+    "Colloquio tecnico (TL)",
+    "Test pratico chiacchierata con FD (TL)",
+    "Approfondimenti (TL)",
+    "Proposta (TL)",
+]
+
 def _get_api_key() -> str:
     return os.getenv("MANATAL_API_KEY", "")
 
@@ -147,9 +169,7 @@ def fetch_candidates(headers: Dict[str, str]) -> List[Dict[str, object]]:
 
 
 def fetch_candidate(headers: Dict[str, str], candidate_id: int) -> Dict[str, object]:
-    resp = requests.get(f"{API_BASE}/candidates/{candidate_id}/", headers=headers, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    return _manatal_get(headers, f"{API_BASE}/candidates/{candidate_id}/").json()
 
 
 def get_candidate_info(headers: Dict[str, str], email: str):

@@ -83,24 +83,6 @@ def format_df(df: pd.DataFrame):
     return df
 
 
-def is_before_one_month_ago(test_last_activity):
-    """
-    Checks if the given datetime string (format: '2025-11-05 13:27:37.703000')
-    represents a date before 1 month ago from today.
-
-    Returns True if the activity was more than 30 days ago.
-    """
-    # Get current date (replace with your current date logic if needed)
-    current_date = datetime.now()  # Or use: datetime(2025, 12, 16, 18, 33, 0)
-
-    # Calculate days passed
-    delta = current_date - test_last_activity
-    days_passed = delta.days
-
-    # Check if more than 30 days ago (1 month threshold)
-    return days_passed > 20
-
-
 
 def classify_candidate(test_df):
     """Return a classification key and test row for a candidate based on their test results."""

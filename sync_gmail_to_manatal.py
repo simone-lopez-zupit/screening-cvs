@@ -23,8 +23,13 @@ load_dotenv()
 # CONFIGURATION
 # ──────────────────────────────────────────────
 SUBJECT_PREFIXES = {
-    "TL": "RECRUITMENT Candidatura Spontanea [Technical Lead]",
-    "DEV": "RECRUITMENT Candidatura Spontanea [Mid/Senior Dev]",
+    "TL": ["RECRUITMENT Candidatura Spontanea [Technical Lead]"],
+    "DEV": [
+        "RECRUITMENT Candidatura Spontanea [Mid/Senior Dev]",
+        "RECRUITMENT Candidatura Spontanea [Jun Dev]",
+        "RECRUITMENT Candidatura Spontanea [Mid Dev]",
+        "RECRUITMENT Candidatura Spontanea [Sen Dev]",
+    ],
 }
 
 # ── Order in which boards are processed ───────────────────────────
@@ -65,7 +70,7 @@ def _process_board(board_name, headers, gmail_service):
     cfg = BOARDS[board_name]
     job_id = cfg["job_id"]
     stage_names = list(cfg["stages"].values())
-    subject_prefix = SUBJECT_PREFIXES[board_name]
+    subject_prefixes = SUBJECT_PREFIXES[board_name]
 
     # Step 1 — Get matches from all stages
     matches = []
@@ -106,8 +111,12 @@ def _process_board(board_name, headers, gmail_service):
             log.info("  SKIP — already has a %s note", NOTE_TAG)
             continue
 
-        # Search Gmail for this candidate's recruitment email
-        email_data = fetch_recruitment_email_for(gmail_service, cand_email, subject_prefix)
+        # Search Gmail for this candidate's recruitment email (try all subject prefixes)
+        email_data = None
+        for prefix in subject_prefixes:
+            email_data = fetch_recruitment_email_for(gmail_service, cand_email, prefix)
+            if email_data:
+                break
         if not email_data:
             log.debug("  No recruitment email with 'Informazioni aggiuntive' for %s", cand_email)
             no_email_body.append(cand_name)

@@ -1,9 +1,7 @@
-import argparse
 import os
 from collections import defaultdict
 from datetime import datetime, timedelta
 import time
-from ftplib import all_errors
 from pathlib import Path
 
 import pandas as pd
@@ -12,7 +10,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import requests
 from dotenv import load_dotenv
 
-from services.gmail_service import send_gmail
+from services.gmail_service import send_templated_email
 from services.manatal_service import (
     build_headers,
     fetch_stage_ids,
@@ -20,6 +18,8 @@ from services.manatal_service import (
     fetch_job_matches,
     fetch_candidates,
     fetch_candidate,
+    fetch_matches_with_candidates,
+    get_candidate_names,
     move_match,
     drop_candidate,
     has_testdome_note,
@@ -29,16 +29,32 @@ from services.manatal_service import (
 load_dotenv()
 
 # ── Configuration ─────────────────────────────────────────────────────
-JOB_ID        = 303943  # DEV
-# JOB_ID      = 3349722  # MAUI
-FROM_STAGE    = "Test preliminare"
-TO_STAGE      = "Chiacchierata conoscitiva"
-EMAIL_SUBJECT = "Candidatura Zupit"
-GMAIL_USER      = os.getenv("GMAIL_USER")
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
-NON_FARE_COSE = True
-SLEEP_SECONDS = 85
-# ──────────────────────────────────────────────────────────────────────
+BOARDS = {
+    "TL": {
+        "job_id": os.getenv("MANATAL_JOB_TL_ID"),
+        "from_stage": "Test preliminare (TL)",
+        "to_stage": "Chiacchierata conoscitiva (TL)",
+        "email_subject": "Candidatura Zupit",
+        "email_drop_body_file": os.getenv("DROP_EMAIL_BODY_FILE"),
+        "email_chiacchierata_body_file": os.getenv("SEND_CHIACCHIERATA_EMAIL_BODY_FILE"),
+        "non_fare_cose": True,
+        "sleep_seconds": 85,
+    },
+    "DEV": {
+        "job_id": 303943,
+        "from_stage": "Test preliminare",
+        "to_stage": "Chiacchierata conoscitiva",
+        "email_subject": "Candidatura Zupit",
+        "email_drop_body_file": os.getenv("DROP_EMAIL_BODY_FILE"),
+        "email_chiacchierata_body_file": os.getenv("SEND_CHIACCHIERATA_EMAIL_BODY_FILE"),
+        "non_fare_cose": True,
+        "sleep_seconds": 85,
+    },
+}
+
+# ── Change this to switch board ───────────────────────────────────
+BOARD = "DEV"
+# ──────────────────────────────────────────────────────────────────
 
 
 def format_df(df: pd.DataFrame):
@@ -128,11 +144,15 @@ def extract_to_evaluate(df: pd.DataFrame):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Pipeline di test Manatal -> test preliminare add notes.")
-    parser.add_argument("--email-drop-body-file", default=os.getenv("DROP_EMAIL_BODY_FILE"))
-    parser.add_argument("--email-chiacchierata-body-file", default=os.getenv("SEND_CHIACCHIERATA_EMAIL_BODY_FILE"))
-
-    args = parser.parse_args()
+    cfg = BOARDS[BOARD]
+    job_id = cfg["job_id"]
+    from_stage = cfg["from_stage"]
+    to_stage = cfg["to_stage"]
+    email_subject = cfg["email_subject"]
+    email_drop_file = cfg["email_drop_body_file"]
+    email_chiacchierata_file = cfg["email_chiacchierata_body_file"]
+    non_fare_cose = cfg["non_fare_cose"]
+    sleep_seconds = cfg["sleep_seconds"]
 
     headers = build_headers()
 
@@ -156,28 +176,14 @@ def main() -> None:
 
     testdome_headers = {"Authorization": f"Bearer {access_token}"}
 
-    # GMAIL
-    body_chiacchierata_template_path = args.email_chiacchierata_body_file
-    body_chiacchierata_template = Path(body_chiacchierata_template_path).read_text(encoding="utf-8")
-    body_drop_template_path = args.email_drop_body_file
-    body_drop_template = Path(body_drop_template_path).read_text(encoding="utf-8")
-
     print(f"Getting map stages...")
-    stage_map = fetch_stage_ids(headers, [FROM_STAGE, TO_STAGE])
-    from_stage_id = stage_map.get(FROM_STAGE)
-    to_stage_id = stage_map.get(TO_STAGE)
+    stage_map = fetch_stage_ids(headers, [from_stage, to_stage])
+    from_stage_id = stage_map.get(from_stage)
+    to_stage_id = stage_map.get(to_stage)
 
-    print(f"Cerco match in '{FROM_STAGE}' per job {JOB_ID}...")
-    matches = fetch_job_matches(headers, JOB_ID, from_stage_id, stage_name=FROM_STAGE, page_size=200)
-    print(f"Trovati {len(matches)} match nello stage di origine.")
-
-    print(f"Getting candidates...")
-    selected: List[Tuple[Dict[str, object], Dict[str, object]]] = []
-    for match in matches:
-        cand_id = int(match["candidate"])
-        candidate = fetch_candidate(headers, cand_id)
-        selected.append((match, candidate))
-        time.sleep(.5)
+    print(f"Cerco match in '{from_stage}' per job {job_id}...")
+    selected = fetch_matches_with_candidates(headers, job_id, from_stage_id, stage_name=from_stage)
+    print(f"Trovati {len(selected)} match nello stage di origine.")
 
     # GET TEST RESULTS from TESTDOME
     test_results: List[Dict[str, object]] = []
@@ -332,8 +338,6 @@ def main() -> None:
     # extract_possible_cheating(df)
     # extract_to_evaluate(df)
 
-    non_fare_cose = NON_FARE_COSE
-
     passati_80 = 0
     falliti_60 = 0
     da_valutare = 0
@@ -346,8 +350,7 @@ def main() -> None:
     # Passato, fallito
     for idx, (match, candidate) in enumerate(selected, start=1):
         cand_id = int(match.get("candidate"))
-        cand_fullname = str(candidate.get("full_name") or "").strip().title()
-        cand_first_name = cand_fullname.split()[0] if cand_fullname else ""
+        cand_fullname, cand_first_name = get_candidate_names(candidate)
         cand_email = str(candidate.get("email") or "").strip()
         match_id = int(match.get("id"))
         test_df = df[df["email"] == cand_email]
@@ -357,12 +360,10 @@ def main() -> None:
         test_count = len(test_df)
 
         if test_count == 0:
-            # print(f"  Test non fatto -> continue.")
             test_count_0 += 1
             continue
 
         if test_count >= 2:
-            # print(f"  {test_count} test con email: {cand_email} --> non faccio nulla")
             test_count_2 += 1
             print(f"  Test count 2.")
 
@@ -380,15 +381,11 @@ def main() -> None:
         print(f"  Test: {test_name}  |  Score: {test_score}/100  |  ({test_time_used}) - {test_last_activity}")
 
         if test_status in ("didNotTake", "canceled", "started", "sendingInvitation", "paused"):
-            # print(f"  Status: {test_status} --> continue")
             stati_strani += 1
             continue
 
         if test_status == "invited":
-            # print(f"  Status: {test_status} | Google Form compilato, Test non ancora fatto")
             invited += 1
-            #   PASSATE <= 2 settimane --> reminder
-            #   PASSATE > 2 settimane --> drop
             continue
 
         if pd.isna(test_score) or test_score == 0:
@@ -417,15 +414,12 @@ def main() -> None:
                 continue
 
             move_match(headers, match_id, to_stage_id)
-            print(f"  Test passato -> spostato in '{TO_STAGE}'.")
+            print(f"  Test passato -> spostato in '{to_stage}'.")
 
-            if GMAIL_USER and GMAIL_APP_PASSWORD and cand_email:
-                body = body_chiacchierata_template.format(name=cand_first_name)
-                send_gmail(GMAIL_USER, GMAIL_APP_PASSWORD, cand_email, EMAIL_SUBJECT, body)
-                time.sleep(SLEEP_SECONDS)
+            if email_chiacchierata_file:
+                send_templated_email(cand_email, email_subject, email_chiacchierata_file, cand_first_name)
+                time.sleep(sleep_seconds)
                 print("  Email chiacchierata inviata.")
-            else:
-                print("  Email NON inviata (credenziali o email mancanti).")
 
         elif test_score < 60:
             falliti_60 += 1
@@ -437,13 +431,10 @@ def main() -> None:
             drop_candidate(headers, int(match_id))
             print(f"  Droppato.")
 
-            if GMAIL_USER and GMAIL_APP_PASSWORD and cand_email:
-                body = body_drop_template.format(name=cand_first_name)
-                send_gmail(GMAIL_USER, GMAIL_APP_PASSWORD, cand_email, EMAIL_SUBJECT, body)
-                time.sleep(SLEEP_SECONDS)
+            if email_drop_file:
+                send_templated_email(cand_email, email_subject, email_drop_file, cand_first_name)
+                time.sleep(sleep_seconds)
                 print("  Email drop inviata.")
-            else:
-                print("  Email NON inviata (credenziali o email mancanti).")
 
         else:
             da_valutare += 1

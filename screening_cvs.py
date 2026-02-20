@@ -3,7 +3,6 @@ Estrae informazioni strutturate dai PDF dei CV, salva i risultati in Excel
 e organizza zip dei CV accettati/rifiutati usando GPT-4o per il parsing.
 """
 
-import argparse
 import base64
 import hashlib
 import json
@@ -25,6 +24,27 @@ from services.manatal_service import build_headers, get_candidate_info
 
 load_dotenv()
 
+# ── Configuration ─────────────────────────────────────────────────────
+BOARDS = {
+    "TL": {
+        "input_dir": "cvs",
+        "duplicates_dir": "cvs_duplicati",
+        "model": "gpt-4o",
+        "pause": 0.0,
+        "limit": None,
+    },
+    "DEV": {
+        "input_dir": "cvs",
+        "duplicates_dir": "cvs_duplicati",
+        "model": "gpt-4o",
+        "pause": 0.0,
+        "limit": None,
+    },
+}
+
+# ── Change this to switch board ───────────────────────────────────
+BOARD = "DEV"
+# ──────────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = (
     "Sei un assistente che esegue OCR e parsing di CV. "
@@ -316,46 +336,17 @@ def process_directory(
 
 
 def main() -> None:
-    load_dotenv()
-    parser = argparse.ArgumentParser(
-        description="Estrae dati dai CV PDF e li salva in Excel/zip usando OpenAI GPT-4o."
-    )
-    parser.add_argument(
-        "--input-dir",
-        default="cvs",
-        help="Cartella che contiene i PDF (default: cvs)",
-    )
-    parser.add_argument(
-        "--duplicates-dir",
-        default="cvs_duplicati",
-        help="Cartella dove spostare i duplicati prima di processare (default: cvs_duplicati)",
-    )
-    parser.add_argument(
-        "--model",
-        default="gpt-4o",
-        help="Modello OpenAI da usare (default: gpt-4o)",
-    )
-    parser.add_argument(
-        "--pause",
-        type=float,
-        default=0.0,
-        help="Secondi di attesa tra le chiamate API (default: 0)",
-    )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=None,
-        help="Numero massimo di PDF da processare (default: tutti)",
-    )
-    args = parser.parse_args()
+    cfg = BOARDS[BOARD]
+    input_dir = Path(cfg["input_dir"])
+    duplicates_dir = Path(cfg["duplicates_dir"])
+    model = cfg["model"]
+    pause = cfg["pause"]
+    limit = cfg["limit"]
 
     headers = build_headers()
 
-    input_dir = Path(args.input_dir)
     if not input_dir.is_dir():
         raise SystemExit(f"Cartella di input non trovata: {input_dir}")
-
-    duplicates_dir = Path(args.duplicates_dir)
     duplicates = find_duplicates(input_dir)
     if duplicates:
         print("Duplicati trovati (hash -> file):")
@@ -371,9 +362,9 @@ def main() -> None:
     rows = process_directory(
         headers=headers,
         input_dir=input_dir,
-        model=args.model,
-        pause=args.pause,
-        limit=args.limit
+        model=model,
+        pause=pause,
+        limit=limit
     )
 
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")

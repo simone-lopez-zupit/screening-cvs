@@ -10,7 +10,18 @@ from openpyxl import Workbook
 from services.manatal_service import build_headers, get_all_matches
 
 # ── Configuration ─────────────────────────────────────────────────────
-JOB_ID = "303943"  # DEV
+BOARDS = {
+    "TL": {
+        "job_id": os.getenv("MANATAL_JOB_TL_ID"),
+    },
+    "DEV": {
+        "job_id": "303943",
+    },
+}
+
+# ── Change this to switch board ───────────────────────────────────
+BOARD = "DEV"
+# ──────────────────────────────────────────────────────────────────
 
 OUTPUT_FIELDS = [
     "stage_name",
@@ -91,10 +102,13 @@ def write_rows_to_excel(rows: List[Dict[str, str]], output_path: Path, headers: 
 def main() -> None:
     load_dotenv()
 
+    cfg = BOARDS[BOARD]
+    job_id = cfg["job_id"]
+
     headers = build_headers()
 
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    all_matches = get_all_matches(headers=headers, job_id=JOB_ID)
+    all_matches = get_all_matches(headers=headers, job_id=job_id)
 
     date_ranges = [
         (datetime(2022, 1, 1), datetime.today()), # full range

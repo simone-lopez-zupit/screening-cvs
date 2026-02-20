@@ -8,6 +8,7 @@ import os
 import re
 import smtplib
 from email.message import EmailMessage
+from pathlib import Path
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -41,6 +42,21 @@ def send_gmail(
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
         smtp.login(user, app_password)
         smtp.send_message(msg)
+
+
+def send_templated_email(
+    to_email: str,
+    subject: str,
+    template_path: str,
+    name: str,
+) -> None:
+    """Load template from file, format with {name}, and send via SMTP."""
+    user = os.getenv("GMAIL_USER", "")
+    app_password = os.getenv("GMAIL_APP_PASSWORD", "")
+    if not user or not app_password or not to_email:
+        return
+    body = Path(template_path).read_text(encoding="utf-8").format(name=name)
+    send_gmail(user, app_password, to_email, subject, body)
 
 
 # ── Read (Gmail API) ─────────────────────────────────────────────────

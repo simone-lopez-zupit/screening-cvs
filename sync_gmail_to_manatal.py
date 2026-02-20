@@ -1,5 +1,4 @@
 import json
-import logging.handlers
 import os
 import time
 
@@ -7,6 +6,7 @@ from dotenv import load_dotenv
 import requests
 
 from services.gmail_service import get_gmail_service, fetch_recruitment_email_for
+from services.logging_config import setup_logger
 from services.manatal_service import (
     build_headers,
     fetch_job_matches as _service_fetch_job_matches,
@@ -41,30 +41,7 @@ BOARDS = {
 BOARD = "DEV"
 # ──────────────────────────────────────────────────────────────────
 
-# ──────────────────────────────────────────────
-# LOGGING — daily rotation, 7-day retention
-# ──────────────────────────────────────────────
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
-os.makedirs(LOG_DIR, exist_ok=True)
-
-log = logging.getLogger("gmail_manatal")
-log.setLevel(logging.DEBUG)
-
-_file_handler = logging.handlers.TimedRotatingFileHandler(
-    filename=os.path.join(LOG_DIR, "gmail_manatal.log"),
-    when="midnight",
-    interval=1,
-    backupCount=7,
-    encoding="utf-8",
-)
-_file_handler.setFormatter(logging.Formatter("%(asctime)s  %(levelname)-8s  %(message)s"))
-_file_handler.suffix = "%Y-%m-%d"
-
-_console_handler = logging.StreamHandler()
-_console_handler.setFormatter(logging.Formatter("%(levelname)-8s  %(message)s"))
-
-log.addHandler(_file_handler)
-log.addHandler(_console_handler)
+log = setup_logger("gmail_manatal")
 
 # ──────────────────────────────────────────────
 # MANATAL — look up candidate & create note

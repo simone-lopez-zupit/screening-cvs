@@ -4,7 +4,7 @@ Manatal API service — shared helpers used by all pipeline scripts.
 
 import os
 import time
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import requests
 
@@ -151,6 +151,30 @@ def get_all_matches(
         url_job_matches = absolute_url(data.get("next"))
 
     return matches_raw
+
+
+# ── Candidate helpers ────────────────────────────────────────────────
+
+def get_candidate_names(candidate: Dict[str, object]) -> Tuple[str, str]:
+    """Return (full_name, first_name) from a candidate dict."""
+    fullname = str(candidate.get("full_name") or "").strip().title()
+    first_name = fullname.split()[0] if fullname else ""
+    return fullname, first_name
+
+
+def fetch_matches_with_candidates(
+    headers: Dict[str, str],
+    job_id: str,
+    stage_id: int,
+    stage_name: Optional[str] = None,
+) -> List[Tuple[Dict[str, object], Dict[str, object]]]:
+    """Fetch matches in a stage and resolve each to its candidate."""
+    matches = fetch_job_matches(headers, job_id, stage_id, stage_name=stage_name, page_size=200)
+    selected: List[Tuple[Dict[str, object], Dict[str, object]]] = []
+    for match in matches:
+        candidate = fetch_candidate(headers, int(match["candidate"]))
+        selected.append((match, candidate))
+    return selected
 
 
 # ── Candidates ───────────────────────────────────────────────────────

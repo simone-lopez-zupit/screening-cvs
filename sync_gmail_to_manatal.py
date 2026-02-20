@@ -1,4 +1,3 @@
-import json
 import os
 import time
 
@@ -37,8 +36,8 @@ BOARDS = {
     },
 }
 
-# ── Change this to switch board ───────────────────────────────────
-BOARD = "DEV"
+# ── Order in which boards are processed ───────────────────────────
+BOARD_ORDER = ["TL", "DEV"]
 # ──────────────────────────────────────────────────────────────────
 
 log = setup_logger("gmail_manatal")
@@ -68,14 +67,11 @@ def _fetch_job_matches_for_stage(headers: dict, job_id: str, stage_name: str) ->
 # ──────────────────────────────────────────────
 # 3. MAIN — glue it all together
 # ──────────────────────────────────────────────
-def main():
-    headers = build_headers()
+def _process_board(board_name, headers, gmail_service):
+    """Run the sync pipeline for a single board."""
+    log.info("══ Processing board: %s ══", board_name)
 
-    dry_run       = os.getenv("DRY_RUN", "false").lower() in ("1", "true", "yes")
-    limit         = int(os.getenv("LIMIT", "0"))
-    save_file     = os.getenv("SAVE_FILE", "")
-
-    cfg = BOARDS[BOARD]
+    cfg = BOARDS[board_name]
     job_id = cfg["job_id"]
     stage_names = cfg["stage_names"]
     subject_prefix = cfg["subject_prefix"]
@@ -93,23 +89,14 @@ def main():
                 matches.append(m)
     log.info("Total unique candidates across all stages: %d", len(matches))
     if not matches:
-        log.warning("No matches found.")
+        log.warning("No matches found for %s.", board_name)
         return
 
-    if limit:
-        log.info("Will stop after %d note(s) created.", limit)
-
     # Step 2 — For each match, get candidate email, then search Gmail
-    gmail_service = get_gmail_service()
-
     matched = []
     no_email_body = []
 
     for match in matches:
-        if limit and len(matched) >= limit:
-            log.info("Reached note limit (%d), stopping.", limit)
-            break
-
         cand_id = int(match["candidate"])
         time.sleep(0.5)
         candidate = fetch_candidate(headers, cand_id)
@@ -139,34 +126,13 @@ def main():
         log.info("  %s → %s…", cand_email, preview)
         matched.append((cand_email, cand_id, cand_name, email_data))
 
-    log.info("── Summary: %d with email body, %d without ──", len(matched), len(no_email_body))
+    log.info("── Summary [%s]: %d with email body, %d without ──", board_name, len(matched), len(no_email_body))
 
     if not matched:
-        log.warning("Nothing to do.")
-        return
-
-    # Save to file if requested
-    if save_file:
-        output = []
-        for cand_email, cand_id, cand_name, data in matched:
-            output.append({
-                "name": cand_name,
-                "email": cand_email,
-                "candidate_id": cand_id,
-                "subject": data["subject"],
-                "body": data["body"],
-                "note": f"{NOTE_TAG} **{data['subject']}**\n\n{data['body']}",
-            })
-        with open(save_file, "w", encoding="utf-8") as f:
-            json.dump(output, f, ensure_ascii=False, indent=2)
-        log.info("Saved %d matched note(s) to %s", len(output), save_file)
+        log.warning("Nothing to do for %s.", board_name)
         return
 
     # Step 3 — Create notes on Manatal
-    if dry_run:
-        log.info("── DRY RUN — skipping note creation ──")
-        return
-
     created = 0
     for cand_email, cand_id, cand_name, data in matched:
         time.sleep(0.5)
@@ -182,7 +148,16 @@ def main():
         except requests.HTTPError as exc:
             log.error("Failed to create note for %s: %s", cand_name, exc)
 
-    log.info("Done — created: %d notes", created)
+    log.info("Done [%s] — created: %d notes", board_name, created)
+
+
+def main():
+    headers = build_headers()
+
+    gmail_service = get_gmail_service()
+
+    for board_name in BOARD_ORDER:
+        _process_board(board_name, headers, gmail_service)
 
 
 if __name__ == "__main__":

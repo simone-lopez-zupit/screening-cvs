@@ -126,7 +126,7 @@ def fetch_recruitment_email_for(service, email: str, subject_prefix: str) -> dic
     Search Gmail for a recruitment email from a specific sender.
     Returns {"subject": ..., "body": ...} or None.
     """
-    query = f'from:{email} subject:"RECRUITMENT Candidatura Spontanea" after:2025/10/16'
+    query = f'from:{email} subject:"RECRUITMENT Candidatura Spontanea" after:2026/01/01'
     log.debug("Gmail query for %s: %s", email, query)
 
     results = service.users().messages().list(userId="me", q=query, maxResults=5).execute()

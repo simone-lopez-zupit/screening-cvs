@@ -1,5 +1,9 @@
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 BOARDS = {
     "TL": {
         "job_id": os.getenv("MANATAL_JOB_TL_ID"),

@@ -7,17 +7,8 @@ from typing import Dict, List, Optional
 from dotenv import load_dotenv
 from openpyxl import Workbook
 
+from config.boards import BOARDS
 from services.manatal_service import build_headers, get_all_matches
-
-# ── Configuration ─────────────────────────────────────────────────────
-BOARDS = {
-    "TL": {
-        "job_id": os.getenv("MANATAL_JOB_TL_ID"),
-    },
-    "DEV": {
-        "job_id": "303943",
-    },
-}
 
 # ── Change this to switch board ───────────────────────────────────
 BOARD = "DEV"

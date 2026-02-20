@@ -12,28 +12,6 @@ API_BASE = "https://api.manatal.com/open/v3"
 
 NOTE_TAG = "[GMAIL_SYNC]"
 
-STAGE_NAMES_DEV = [
-    "Nuova candidatura",
-    "Interessante - per futuro",
-    "Test preliminare",
-    "Chiacchierata conoscitiva",
-    "Feedback chiacchierata conoscitiva",
-    "Colloquio tecnico",
-    "Live coding",
-]
-
-STAGE_NAMES_TL = [
-    "Nuova candidatura (TL)",
-    "Interessante - per futuro (TL)",
-    "Test preliminare (TL)",
-    "Chiacchierata conoscitiva (TL)",
-    "Feedback chiacchierata conoscitiva (TL)",
-    "Colloquio tecnico (TL)",
-    "Test pratico chiacchierata con FD (TL)",
-    "Approfondimenti (TL)",
-    "Proposta (TL)",
-]
-
 def _get_api_key() -> str:
     return os.getenv("MANATAL_API_KEY", "")
 
@@ -56,10 +34,10 @@ def absolute_url(url: Optional[str]) -> Optional[str]:
     return f"{API_BASE.rstrip('/')}/{url.lstrip('/')}"
 
 
-def _manatal_get(headers: Dict[str, str], url: str, **kwargs) -> requests.Response:
-    """GET with retry on 429 rate limit."""
+def _manatal_request(method: str, headers: Dict[str, str], url: str, **kwargs) -> requests.Response:
+    """HTTP request with retry on 429 rate limit."""
     for attempt in range(5):
-        resp = requests.get(url, headers=headers, timeout=30, **kwargs)
+        resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
         if resp.status_code == 429:
             wait = 2 ** attempt
             time.sleep(wait)
@@ -70,6 +48,18 @@ def _manatal_get(headers: Dict[str, str], url: str, **kwargs) -> requests.Respon
     return resp
 
 
+def _manatal_get(headers: Dict[str, str], url: str, **kwargs) -> requests.Response:
+    return _manatal_request("GET", headers, url, **kwargs)
+
+
+def _manatal_post(headers: Dict[str, str], url: str, **kwargs) -> requests.Response:
+    return _manatal_request("POST", headers, url, **kwargs)
+
+
+def _manatal_patch(headers: Dict[str, str], url: str, **kwargs) -> requests.Response:
+    return _manatal_request("PATCH", headers, url, **kwargs)
+
+
 # ── Stages ───────────────────────────────────────────────────────────
 
 def fetch_stage_ids(headers: Dict[str, str], stage_names: Iterable[str]) -> Dict[str, int]:
@@ -78,8 +68,7 @@ def fetch_stage_ids(headers: Dict[str, str], stage_names: Iterable[str]) -> Dict
 
     url: Optional[str] = f"{API_BASE}/match-stages/?page_size=200"
     while url:
-        resp = requests.get(url, headers=headers, timeout=30)
-        resp.raise_for_status()
+        resp = _manatal_get(headers, url)
         data = resp.json()
         for stage in data.get("results", []):
             name = str(stage.get("name") or "")
@@ -104,9 +93,7 @@ def fetch_job_matches(
     matches: List[Dict[str, object]] = []
     url: Optional[str] = f"{API_BASE}/jobs/{job_id}/matches/?page_size={page_size}"
     while url:
-        resp = requests.get(url, headers=headers, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        data = _manatal_get(headers, url).json()
         for match in data.get("results", []):
             stage = match.get("stage") or {}
             if int(stage.get("id", -1)) != stage_id:
@@ -128,9 +115,7 @@ def fetch_all_job_matches(headers: Dict[str, str]) -> List[Dict[str, object]]:
     index = 0
     while index == 0 and url:
         index += 1
-        resp = requests.get(url, headers=headers, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        data = _manatal_get(headers, url).json()
         all_matches.extend(data["results"])
         url = data.get("next")
     return all_matches
@@ -138,15 +123,13 @@ def fetch_all_job_matches(headers: Dict[str, str]) -> List[Dict[str, object]]:
 
 def get_all_matches(
     headers: Dict[str, str],
-    job_id: str = "303943",
+    job_id: str = "",
     page_size: int = 200,
 ) -> List[Dict[str, str]]:
     matches_raw: List[Dict[str, str]] = []
     url_job_matches: Optional[str] = f"{API_BASE}/jobs/{job_id}/matches/?page_size={page_size}"
     while url_job_matches:
-        resp = requests.get(url_job_matches, headers=headers, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        data = _manatal_get(headers, url_job_matches).json()
         matches_raw.extend(data.get("results", []))
         url_job_matches = absolute_url(data.get("next"))
 
@@ -184,9 +167,7 @@ def fetch_candidates(headers: Dict[str, str]) -> List[Dict[str, object]]:
     url = f"{API_BASE}/candidates/?page_size=200"
 
     while url:
-        resp = requests.get(url, headers=headers, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        data = _manatal_get(headers, url).json()
         all_candidates.extend(data["results"])
         url = data.get("next")
     return all_candidates
@@ -198,10 +179,7 @@ def fetch_candidate(headers: Dict[str, str], candidate_id: int) -> Dict[str, obj
 
 def get_candidate_info(headers: Dict[str, str], email: str):
     url_candidates: Optional[str] = f"{API_BASE}/candidates/?email={email}"
-
-    resp = requests.get(url_candidates, headers=headers, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
+    data = _manatal_get(headers, url_candidates).json()
 
     candidates = data.get("results", [])
 
@@ -214,10 +192,7 @@ def get_candidate_info(headers: Dict[str, str], email: str):
 
     cand_id = candidates[0].get("id")
     url_matches: Optional[str] = f"{API_BASE}/candidates/{cand_id}/matches/"
-
-    resp = requests.get(url_matches, headers=headers, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
+    data = _manatal_get(headers, url_matches).json()
     matches = data.get("results", [])
 
     matches = (f"{match.get('stage').get('name')}" for match in matches)
@@ -228,35 +203,18 @@ def get_candidate_info(headers: Dict[str, str], email: str):
 # ── Match mutations ──────────────────────────────────────────────────
 
 def move_match(headers: Dict[str, str], match_id: int, stage_id: int) -> None:
-    payload = {"stage": {"id": stage_id}}
-    resp = requests.patch(
-        f"{API_BASE}/matches/{match_id}/",
-        headers=headers,
-        json=payload,
-        timeout=30,
-    )
-    resp.raise_for_status()
+    _manatal_patch(headers, f"{API_BASE}/matches/{match_id}/", json={"stage": {"id": stage_id}})
 
 
 def drop_candidate(headers: Dict[str, str], match_id: int) -> None:
-    payload = {"is_active": "false"}
-    resp = requests.patch(
-        f"{API_BASE}/matches/{match_id}/",
-        headers=headers,
-        json=payload,
-        timeout=30,
-    )
-    resp.raise_for_status()
+    _manatal_patch(headers, f"{API_BASE}/matches/{match_id}/", json={"is_active": "false"})
 
 
 # ── Notes ────────────────────────────────────────────────────────────
 
 def has_testdome_note(cand_id: int, headers: Dict[str, str]) -> bool:
     url = f"{API_BASE}/candidates/{cand_id}/notes/"
-
-    resp = requests.get(url, headers=headers, timeout=30)
-    resp.raise_for_status()
-    notes = resp.json()
+    notes = _manatal_get(headers, url).json()
 
     return any(
         isinstance(note.get("info"), str) and "testdome" in note["info"].lower()
@@ -267,9 +225,7 @@ def has_testdome_note(cand_id: int, headers: Dict[str, str]) -> bool:
 def create_note(headers: Dict[str, str], candidate_id: int, info: str) -> dict:
     """POST a plain note on a Manatal candidate."""
     url = f"{API_BASE}/candidates/{candidate_id}/notes/"
-    resp = requests.post(url, json={"info": info}, headers=headers, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    return _manatal_post(headers, url, json={"info": info}).json()
 
 
 def has_gmail_sync_note(headers: Dict[str, str], candidate_pk: int) -> bool:
@@ -291,19 +247,9 @@ def create_candidate_note(
     note_content: str,
     subject: str = "",
 ) -> dict:
-    """POST a note on a Manatal candidate with 429 retry."""
+    """POST a note on a Manatal candidate."""
     url = f"{API_BASE}/candidates/{candidate_pk}/notes/"
     payload = {
         "info": f"{NOTE_TAG} **{subject}**\n\n{note_content}" if subject else f"{NOTE_TAG}\n\n{note_content}",
     }
-    for attempt in range(5):
-        resp = requests.post(url, headers=headers, json=payload)
-        if resp.status_code == 429:
-            wait = 2 ** attempt
-            time.sleep(wait)
-            continue
-        resp.raise_for_status()
-        break
-    else:
-        resp.raise_for_status()
-    return resp.json()
+    return _manatal_post(headers, url, json=payload).json()

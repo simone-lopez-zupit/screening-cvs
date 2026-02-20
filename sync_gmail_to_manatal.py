@@ -4,6 +4,7 @@ import time
 from dotenv import load_dotenv
 import requests
 
+from config.boards import BOARDS
 from services.gmail_service import get_gmail_service, fetch_recruitment_email_for
 from services.logging_config import setup_logger
 from services.manatal_service import (
@@ -14,8 +15,6 @@ from services.manatal_service import (
     has_gmail_sync_note,
     create_candidate_note,
     NOTE_TAG,
-    STAGE_NAMES_DEV,
-    STAGE_NAMES_TL,
 )
 
 load_dotenv()
@@ -23,17 +22,9 @@ load_dotenv()
 # ──────────────────────────────────────────────
 # CONFIGURATION
 # ──────────────────────────────────────────────
-BOARDS = {
-    "TL": {
-        "job_id": os.getenv("MANATAL_JOB_TL_ID", "2381880"),
-        "stage_names": STAGE_NAMES_TL,
-        "subject_prefix": "RECRUITMENT Candidatura Spontanea [Technical Lead]",
-    },
-    "DEV": {
-        "job_id": os.getenv("MANATAL_JOB_DEV_ID", "303943"),
-        "stage_names": STAGE_NAMES_DEV,
-        "subject_prefix": "RECRUITMENT Candidatura Spontanea [Mid/Senior Dev]",
-    },
+SUBJECT_PREFIXES = {
+    "TL": "RECRUITMENT Candidatura Spontanea [Technical Lead]",
+    "DEV": "RECRUITMENT Candidatura Spontanea [Mid/Senior Dev]",
 }
 
 # ── Order in which boards are processed ───────────────────────────
@@ -73,8 +64,8 @@ def _process_board(board_name, headers, gmail_service):
 
     cfg = BOARDS[board_name]
     job_id = cfg["job_id"]
-    stage_names = cfg["stage_names"]
-    subject_prefix = cfg["subject_prefix"]
+    stage_names = list(cfg["stages"].values())
+    subject_prefix = SUBJECT_PREFIXES[board_name]
 
     # Step 1 — Get matches from all stages
     matches = []

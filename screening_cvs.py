@@ -25,25 +25,11 @@ from services.manatal_service import build_headers, get_candidate_info
 load_dotenv()
 
 # ── Configuration ─────────────────────────────────────────────────────
-BOARDS = {
-    "TL": {
-        "input_dir": "cvs",
-        "duplicates_dir": "cvs_duplicati",
-        "model": "gpt-4o",
-        "pause": 0.0,
-        "limit": None,
-    },
-    "DEV": {
-        "input_dir": "cvs",
-        "duplicates_dir": "cvs_duplicati",
-        "model": "gpt-4o",
-        "pause": 0.0,
-        "limit": None,
-    },
-}
-
-# ── Change this to switch board ───────────────────────────────────
-BOARD = "DEV"
+INPUT_DIR = "cvs"
+DUPLICATES_DIR = "cvs_duplicati"
+MODEL = "gpt-4o"
+PAUSE = 0.0
+LIMIT = None
 # ──────────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = (
@@ -336,12 +322,8 @@ def process_directory(
 
 
 def main() -> None:
-    cfg = BOARDS[BOARD]
-    input_dir = Path(cfg["input_dir"])
-    duplicates_dir = Path(cfg["duplicates_dir"])
-    model = cfg["model"]
-    pause = cfg["pause"]
-    limit = cfg["limit"]
+    input_dir = Path(INPUT_DIR)
+    duplicates_dir = Path(DUPLICATES_DIR)
 
     headers = build_headers()
 
@@ -362,9 +344,9 @@ def main() -> None:
     rows = process_directory(
         headers=headers,
         input_dir=input_dir,
-        model=model,
-        pause=pause,
-        limit=limit
+        model=MODEL,
+        pause=PAUSE,
+        limit=LIMIT
     )
 
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")

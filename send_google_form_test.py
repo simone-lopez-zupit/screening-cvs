@@ -3,6 +3,7 @@ import time
 
 from dotenv import load_dotenv
 
+from config.boards import BOARDS
 from services.gmail_service import send_templated_email, EMAIL_SUBJECT
 from services.manatal_service import (
     build_headers,
@@ -18,11 +19,6 @@ load_dotenv()
 # ── Configuration ─────────────────────────────────────────────────────
 EMAIL_BODY_FILE = os.getenv("SEND_TEST_EMAIL_BODY_FILE")
 SLEEP_SECONDS = 33
-
-BOARDS = {
-    "TL": {"job_id": os.getenv("MANATAL_JOB_TL_ID"), "from_stage": "Test preliminare (TL)", "to_stage": "Colloquio tecnico (TL)"},
-    "DEV": {"job_id": os.getenv("MANATAL_JOB_DEV_ID"), "from_stage": "Test preliminare", "to_stage": "Colloquio tecnico"},
-}
 
 # ── Toggle which boards to process ───────────────────────────────
 SEND_TL = True
@@ -42,8 +38,8 @@ def main() -> None:
     for board in boards_to_send:
         cfg = BOARDS[board]
         job_id = cfg["job_id"]
-        from_stage = cfg["from_stage"]
-        to_stage = cfg["to_stage"]
+        from_stage = cfg["stages"]["test_preliminare"]
+        to_stage = cfg["stages"]["colloquio_tecnico"]
 
         if not job_id:
             raise SystemExit(f"JOB_ID mancante per {board}.")
@@ -69,8 +65,7 @@ def main() -> None:
             # print(f"  Spostato in '{to_stage}'.")
 
             send_templated_email(cand_email, EMAIL_SUBJECT, EMAIL_BODY_FILE, cand_first_name)
-            if cand_email:
-                print("  Email inviata.")
+            print("  Email inviata.")
 
             time.sleep(SLEEP_SECONDS)
 

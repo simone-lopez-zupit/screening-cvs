@@ -3,6 +3,7 @@ import time
 
 from dotenv import load_dotenv
 
+from config.boards import BOARDS
 from services.gmail_service import send_templated_email, EMAIL_SUBJECT
 from services.manatal_service import (
     build_headers,
@@ -17,11 +18,6 @@ load_dotenv()
 # ── Configuration ─────────────────────────────────────────────────────
 EMAIL_BODY_FILE = os.getenv("DROP_EMAIL_BODY_FILE")
 SLEEP_SECONDS = 65
-
-BOARDS = {
-    "TL": {"job_id": os.getenv("MANATAL_JOB_TL_ID"), "from_stage": "Nuova candidatura (TL)"},
-    "DEV": {"job_id": os.getenv("MANATAL_JOB_DEV_ID"), "from_stage": "Nuova candidatura"},
-}
 
 # ── Toggle which boards to drop ──────────────────────────────────
 DROP_TL = False
@@ -41,7 +37,7 @@ def main() -> None:
     for board in boards_to_drop:
         cfg = BOARDS[board]
         job_id = cfg["job_id"]
-        stage_name = cfg["from_stage"]
+        stage_name = cfg["stages"]["nuova_candidatura"]
         print(f"\n══ {board} / {stage_name} ══")
 
         stage_map = fetch_stage_ids(headers, [stage_name])
@@ -62,8 +58,7 @@ def main() -> None:
             print("  Droppato.")
 
             send_templated_email(cand_email, EMAIL_SUBJECT, EMAIL_BODY_FILE, cand_first_name)
-            if cand_email:
-                print("  Email inviata.")
+            print("  Email inviata.")
 
             time.sleep(SLEEP_SECONDS)
 

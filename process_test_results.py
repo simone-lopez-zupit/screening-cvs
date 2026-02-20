@@ -9,6 +9,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from dotenv import load_dotenv
 
+from config.boards import BOARDS
 from services.gmail_service import send_templated_email, EMAIL_SUBJECT
 from services.testdome_service import build_testdome_headers, fetch_all_test_results, TEST_STATUS_MAP
 from services.manatal_service import (
@@ -33,11 +34,6 @@ EMAIL_DROP_BODY_FILE = os.getenv("DROP_EMAIL_BODY_FILE")
 EMAIL_CHIACCHIERATA_BODY_FILE = os.getenv("SEND_CHIACCHIERATA_EMAIL_BODY_FILE")
 NON_FARE_COSE = True
 SLEEP_SECONDS = 85
-
-BOARDS = {
-    "TL": {"job_id": os.getenv("MANATAL_JOB_TL_ID"), "from_stage": "Test preliminare (TL)", "to_stage": "Chiacchierata conoscitiva (TL)"},
-    "DEV": {"job_id": os.getenv("MANATAL_JOB_DEV_ID"), "from_stage": "Test preliminare", "to_stage": "Chiacchierata conoscitiva"},
-}
 
 # ── Toggle which boards to process ───────────────────────────────
 PROCESS_TL = False
@@ -104,31 +100,6 @@ def is_before_one_month_ago(test_last_activity):
     # Check if more than 30 days ago (1 month threshold)
     return days_passed > 20
 
-
-def parse_match_datetime(date_str: str) -> datetime:
-    """Parse ISO 8601 con Z → naive datetime."""
-    if date_str.endswith('Z'):
-        date_str = date_str[:-1] + '+00:00'
-    return datetime.fromisoformat(date_str).replace(tzinfo=None)
-
-
-def extract_possible_cheating(df: pd.DataFrame):
-    time_parts = df["time_used"].astype(str).str.extract(r"(?P<hours>\d+)h(?P<minutes>\d{2})m")
-    minutes = (
-            time_parts["hours"].astype(float) * 60
-            + time_parts["minutes"].astype(float)
-    )
-    cheating_candidates = df[
-        (df["score"] >= 80)
-        & minutes.notna()
-        & (minutes < 25)
-        ]
-    cheating_candidates.to_csv("possible_cheating_candidates.csv", index=False)
-
-
-def extract_to_evaluate(df: pd.DataFrame):
-    to_evaluate_candidates = df["score"].between(60, 79)
-    to_evaluate_candidates.to_csv("candidates_to_evaluate.csv", index=False)
 
 
 def classify_candidate(test_df):
@@ -291,8 +262,8 @@ def main() -> None:
     for board in boards_to_process:
         cfg = BOARDS[board]
         job_id = cfg["job_id"]
-        from_stage = cfg["from_stage"]
-        to_stage = cfg["to_stage"]
+        from_stage = cfg["stages"]["test_preliminare"]
+        to_stage = cfg["stages"]["chiacchierata"]
 
         print(f"\n══ {board} / {from_stage} ══")
 

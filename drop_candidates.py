@@ -15,63 +15,58 @@ from services.manatal_service import (
 load_dotenv()
 
 # ── Configuration ─────────────────────────────────────────────────────
+EMAIL_SUBJECT = "Candidatura Zupit"
+EMAIL_BODY_FILE = os.getenv("DROP_EMAIL_BODY_FILE")
+SLEEP_SECONDS = 65
+
 BOARDS = {
-    "TL": {
-        "from_stage": "Nuova candidatura (TL)",
-        "job_id": os.getenv("MANATAL_JOB_TL_ID"),
-        "email_subject": "Candidatura Zupit",
-        "email_body_file": os.getenv("DROP_EMAIL_BODY_FILE"),
-        "sleep_seconds": 65,
-    },
-    "DEV": {
-        "from_stage": "Test preliminare",
-        "job_id": os.getenv("MANATAL_JOB_DEV_ID"),
-        "email_subject": "Candidatura Zupit",
-        "email_body_file": os.getenv("DROP_EMAIL_BODY_FILE"),
-        "sleep_seconds": 65,
-    },
+    "TL": {"job_id": os.getenv("MANATAL_JOB_TL_ID"), "from_stage": "Nuova candidatura (TL)"},
+    "DEV": {"job_id": os.getenv("MANATAL_JOB_DEV_ID"), "from_stage": "Nuova candidatura"},
 }
 
-# ── Change this to switch board ───────────────────────────────────
-BOARD = "DEV"
+# ── Toggle which boards to drop ──────────────────────────────────
+DROP_TL = False
+DROP_DEV = True
 # ──────────────────────────────────────────────────────────────────
 
 
 def main() -> None:
-    cfg = BOARDS[BOARD]
-    from_stage = cfg["from_stage"]
-    job_id = cfg["job_id"]
-    email_subject = cfg["email_subject"]
-    email_body_file = cfg["email_body_file"]
-    sleep_seconds = cfg["sleep_seconds"]
-
     headers = build_headers()
 
-    stage_map = fetch_stage_ids(headers, [from_stage])
-    from_stage_id = stage_map.get(from_stage)
-    if from_stage_id is None:
-        raise SystemExit(f"Stage non trovato: '{from_stage}'")
+    boards_to_drop = []
+    if DROP_TL:
+        boards_to_drop.append("TL")
+    if DROP_DEV:
+        boards_to_drop.append("DEV")
 
-    print(f"Cerco match in '{from_stage}' per job {job_id}...")
-    selected = fetch_matches_with_candidates(headers, job_id, from_stage_id, stage_name=from_stage)
-    print(f"Trovati {len(selected)} match nello stage '{from_stage}'.")
+    for board in boards_to_drop:
+        cfg = BOARDS[board]
+        job_id = cfg["job_id"]
+        stage_name = cfg["from_stage"]
+        print(f"\n══ {board} / {stage_name} ══")
 
-    if not email_body_file:
-        raise SystemExit("Corpo email mancante: imposta DROP_EMAIL_BODY_FILE.")
+        stage_map = fetch_stage_ids(headers, [stage_name])
+        from_stage_id = stage_map.get(stage_name)
+        if from_stage_id is None:
+            raise SystemExit(f"Stage non trovato: '{stage_name}'")
 
-    for idx, (match, candidate) in enumerate(selected, start=1):
-        cand_fullname, cand_first_name = get_candidate_names(candidate)
-        cand_email = str(candidate.get("email") or "").strip()
-        print(f"- Match {match['id']} / candidato #{idx} - {cand_fullname} ({cand_email or '!!! EMAIL MANCANTE !!!'})")
+        print(f"Cerco match in '{stage_name}' per job {job_id}...")
+        selected = fetch_matches_with_candidates(headers, job_id, from_stage_id, stage_name=stage_name)
+        print(f"Trovati {len(selected)} match nello stage '{stage_name}'.")
 
-        drop_candidate(headers, int(match["id"]))
-        print("  Droppato.")
+        for idx, (match, candidate) in enumerate(selected, start=1):
+            cand_fullname, cand_first_name = get_candidate_names(candidate)
+            cand_email = str(candidate.get("email") or "").strip()
+            print(f"- Match {match['id']} / candidato #{idx} - {cand_fullname} ({cand_email or '!!! EMAIL MANCANTE !!!'})")
 
-        send_templated_email(cand_email, email_subject, email_body_file, cand_first_name)
-        if cand_email:
-            print("  Email inviata.")
+            drop_candidate(headers, int(match["id"]))
+            print("  Droppato.")
 
-        time.sleep(sleep_seconds)
+            send_templated_email(cand_email, EMAIL_SUBJECT, EMAIL_BODY_FILE, cand_first_name)
+            if cand_email:
+                print("  Email inviata.")
+
+            time.sleep(SLEEP_SECONDS)
 
 
 if __name__ == "__main__":

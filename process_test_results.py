@@ -7,10 +7,10 @@ from pathlib import Path
 import pandas as pd
 from typing import Dict, Iterable, List, Optional, Tuple
 
-import requests
 from dotenv import load_dotenv
 
-from services.gmail_service import send_templated_email
+from services.gmail_service import send_templated_email, EMAIL_SUBJECT
+from services.testdome_service import build_testdome_headers, fetch_all_test_results, TEST_STATUS_MAP
 from services.manatal_service import (
     build_headers,
     fetch_stage_ids,
@@ -29,31 +29,19 @@ from services.manatal_service import (
 load_dotenv()
 
 # ── Configuration ─────────────────────────────────────────────────────
+EMAIL_DROP_BODY_FILE = os.getenv("DROP_EMAIL_BODY_FILE")
+EMAIL_CHIACCHIERATA_BODY_FILE = os.getenv("SEND_CHIACCHIERATA_EMAIL_BODY_FILE")
+NON_FARE_COSE = True
+SLEEP_SECONDS = 85
+
 BOARDS = {
-    "TL": {
-        "job_id": os.getenv("MANATAL_JOB_TL_ID"),
-        "from_stage": "Test preliminare (TL)",
-        "to_stage": "Chiacchierata conoscitiva (TL)",
-        "email_subject": "Candidatura Zupit",
-        "email_drop_body_file": os.getenv("DROP_EMAIL_BODY_FILE"),
-        "email_chiacchierata_body_file": os.getenv("SEND_CHIACCHIERATA_EMAIL_BODY_FILE"),
-        "non_fare_cose": True,
-        "sleep_seconds": 85,
-    },
-    "DEV": {
-        "job_id": 303943,
-        "from_stage": "Test preliminare",
-        "to_stage": "Chiacchierata conoscitiva",
-        "email_subject": "Candidatura Zupit",
-        "email_drop_body_file": os.getenv("DROP_EMAIL_BODY_FILE"),
-        "email_chiacchierata_body_file": os.getenv("SEND_CHIACCHIERATA_EMAIL_BODY_FILE"),
-        "non_fare_cose": True,
-        "sleep_seconds": 85,
-    },
+    "TL": {"job_id": os.getenv("MANATAL_JOB_TL_ID"), "from_stage": "Test preliminare (TL)", "to_stage": "Chiacchierata conoscitiva (TL)"},
+    "DEV": {"job_id": os.getenv("MANATAL_JOB_DEV_ID"), "from_stage": "Test preliminare", "to_stage": "Chiacchierata conoscitiva"},
 }
 
-# ── Change this to switch board ───────────────────────────────────
-BOARD = "DEV"
+# ── Toggle which boards to process ───────────────────────────────
+PROCESS_TL = False
+PROCESS_DEV = True
 # ──────────────────────────────────────────────────────────────────
 
 
@@ -133,7 +121,7 @@ def extract_possible_cheating(df: pd.DataFrame):
     cheating_candidates = df[
         (df["score"] >= 80)
         & minutes.notna()
-        & (minutes < 40)
+        & (minutes < 25)
         ]
     cheating_candidates.to_csv("possible_cheating_candidates.csv", index=False)
 
@@ -143,77 +131,37 @@ def extract_to_evaluate(df: pd.DataFrame):
     to_evaluate_candidates.to_csv("candidates_to_evaluate.csv", index=False)
 
 
-def main() -> None:
-    cfg = BOARDS[BOARD]
-    job_id = cfg["job_id"]
-    from_stage = cfg["from_stage"]
-    to_stage = cfg["to_stage"]
-    email_subject = cfg["email_subject"]
-    email_drop_file = cfg["email_drop_body_file"]
-    email_chiacchierata_file = cfg["email_chiacchierata_body_file"]
-    non_fare_cose = cfg["non_fare_cose"]
-    sleep_seconds = cfg["sleep_seconds"]
+def classify_candidate(test_df):
+    """Return a classification key and test row for a candidate based on their test results."""
+    test_count = len(test_df)
 
+    if test_count == 0:
+        return "test_count_0", None
+    if test_count >= 2:
+        return "test_count_2", None
+
+    test = test_df.iloc[0]
+    test_status = test["status"]
+
+    if test_status in ("didNotTake", "canceled", "started", "sendingInvitation", "paused"):
+        return "stati_strani", test
+    if test_status == "invited":
+        return "invited", test
+    if pd.isna(test["score"]) or test["score"] == 0:
+        return "score_0", test
+    if test["score"] >= 80:
+        return "passati", test
+    if test["score"] < 60:
+        return "falliti", test
+    return "da_valutare", test
+
+
+def main() -> None:
     headers = build_headers()
 
     # TESTDOME
-    testdome_client_id = os.getenv("TEST_DOME_CLIENT_ID")
-    testdome_client_secret = os.getenv("TEST_DOME_CLIENT_SECRET")
-
-    token_response = requests.post(
-        url="https://api.testdome.com/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": testdome_client_id,
-            "client_secret": testdome_client_secret,
-        },
-        timeout=30,
-    )
-    token_response.raise_for_status()
-    access_token = token_response.json().get("access_token")
-    if not access_token:
-        raise SystemExit("Access token TestDome mancante.")
-
-    testdome_headers = {"Authorization": f"Bearer {access_token}"}
-
-    print(f"Getting map stages...")
-    stage_map = fetch_stage_ids(headers, [from_stage, to_stage])
-    from_stage_id = stage_map.get(from_stage)
-    to_stage_id = stage_map.get(to_stage)
-
-    print(f"Cerco match in '{from_stage}' per job {job_id}...")
-    selected = fetch_matches_with_candidates(headers, job_id, from_stage_id, stage_name=from_stage)
-    print(f"Trovati {len(selected)} match nello stage di origine.")
-
-    # GET TEST RESULTS from TESTDOME
-    test_results: List[Dict[str, object]] = []
-    skip = 0
-    top = 100
-    while True:
-        params = {"$top": top, "$skip": skip, "$expand": ["test", "activities"]}
-        response = requests.get(
-            "https://api.testdome.com/v3/candidates",
-            headers=testdome_headers,
-            params=params,
-            timeout=30,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        test_results.extend(payload.get("value", []))
-        if not payload.get("hasMoreItems"):
-            break
-        skip += top
-        time.sleep(0.5)
-
-    test_status_map = {
-        "invited": "Invited",
-        "started": "Started",
-        "completed": "Completed",
-        "didNotTake": "Didn't take",
-        "canceled": "Canceled",
-        "sendingInvitation": "Sending invitation",
-        "paused": "Paused",
-    }
+    testdome_headers = build_testdome_headers()
+    test_results = fetch_all_test_results(testdome_headers)
 
     rows = []
     for test_result in test_results:
@@ -226,7 +174,7 @@ def main() -> None:
 
         test_name = str((test_result.get("test") or {}).get("name") or "").strip()
         status_raw = str(test_result.get("status") or "").strip()
-        test_status = test_status_map.get(status_raw, status_raw.title() if status_raw else "")
+        test_status = TEST_STATUS_MAP.get(status_raw, status_raw.title() if status_raw else "")
 
         score_raw = test_result.get("score")
         max_score_raw = test_result.get("maxScore")
@@ -332,128 +280,92 @@ def main() -> None:
     print("----")
     print("")
 
-    # df.to_csv("testdome_results.csv", index=False)
     df = format_df(df)
-    # df.to_csv("testdome_results_formatted.csv", index=False)
-    # extract_possible_cheating(df)
-    # extract_to_evaluate(df)
 
-    passati_80 = 0
-    falliti_60 = 0
-    da_valutare = 0
-    test_count_0 = 0
-    test_count_2 = 0
-    stati_strani = 0
-    invited = 0
-    score_0 = 0
+    boards_to_process = []
+    if PROCESS_TL:
+        boards_to_process.append("TL")
+    if PROCESS_DEV:
+        boards_to_process.append("DEV")
 
-    # Passato, fallito
-    for idx, (match, candidate) in enumerate(selected, start=1):
-        cand_id = int(match.get("candidate"))
-        cand_fullname, cand_first_name = get_candidate_names(candidate)
-        cand_email = str(candidate.get("email") or "").strip()
-        match_id = int(match.get("id"))
-        test_df = df[df["email"] == cand_email]
+    for board in boards_to_process:
+        cfg = BOARDS[board]
+        job_id = cfg["job_id"]
+        from_stage = cfg["from_stage"]
+        to_stage = cfg["to_stage"]
 
-        print(f"{cand_fullname:<25}  |  email: {cand_email:<30}  |  id: {cand_id:<10}  |  match: {match_id:<10}")
+        print(f"\n══ {board} / {from_stage} ══")
 
-        test_count = len(test_df)
+        stage_map = fetch_stage_ids(headers, [from_stage, to_stage])
+        from_stage_id = stage_map.get(from_stage)
+        to_stage_id = stage_map.get(to_stage)
 
-        if test_count == 0:
-            test_count_0 += 1
-            continue
+        print(f"Cerco match in '{from_stage}' per job {job_id}...")
+        selected = fetch_matches_with_candidates(headers, job_id, from_stage_id, stage_name=from_stage)
+        print(f"Trovati {len(selected)} match nello stage di origine.")
 
-        if test_count >= 2:
-            test_count_2 += 1
-            print(f"  Test count 2.")
+        counts = {
+            "passati": 0,
+            "falliti": 0,
+            "da_valutare": 0,
+            "test_count_0": 0,
+            "test_count_2": 0,
+            "stati_strani": 0,
+            "invited": 0,
+            "score_0": 0,
+        }
 
-            continue
+        for idx, (match, candidate) in enumerate(selected, start=1):
+            cand_id = int(match.get("candidate"))
+            cand_fullname, cand_first_name = get_candidate_names(candidate)
+            cand_email = str(candidate.get("email") or "").strip()
+            match_id = int(match.get("id"))
+            test_df = df[df["email"] == cand_email]
 
-        test = test_df.iloc[0]
+            print(f"{cand_fullname:<25}  |  email: {cand_email:<30}  |  id: {cand_id:<10}  |  match: {match_id:<10}")
 
-        test_name = test["name"]
-        test_status = test["status"]
-        test_score = test["score"]
-        test_time_used = test["time_used"]
-        test_last_activity = test["last_activity_date"]
-        test_link = test["link"]
+            category, test = classify_candidate(test_df)
+            counts[category] += 1
 
-        print(f"  Test: {test_name}  |  Score: {test_score}/100  |  ({test_time_used}) - {test_last_activity}")
+            if test is not None:
+                print(f"  Test: {test['name']}  |  Score: {test['score']}/100  |  ({test['time_used']}) - {test['last_activity_date']}")
 
-        if test_status in ("didNotTake", "canceled", "started", "sendingInvitation", "paused"):
-            stati_strani += 1
-            continue
+            if category == "test_count_2":
+                print(f"  Test count 2.")
+            elif category == "score_0":
+                print(f"  Score 0.")
+            elif category == "da_valutare":
+                print(f"  Da valutare.")
 
-        if test_status == "invited":
-            invited += 1
-            continue
-
-        if pd.isna(test_score) or test_score == 0:
-            score_0 += 1
-            print(f"  Score 0.")
-
-            if non_fare_cose:
+            if NON_FARE_COSE or test is None:
                 continue
 
-            drop_candidate(headers, int(match_id))
-            print(f"  Score: 0 --> continue")
-            continue
+            # Write testdome note
+            if category in ("passati", "falliti", "da_valutare"):
+                if not has_testdome_note(cand_id, headers=headers):
+                    create_note(headers, cand_id,
+                        f"Testdome: {test['score']}%  |  {test['name']}  |  ({test['time_used']})\nLink: {test['link']}")
 
-        if not has_testdome_note(cand_id, headers=headers):
-            note_text = (
-                f"Testdome: {test_score}%  |  {test_name}  |  ({test_time_used})\n"
-                f"Link: {test_link}"
-            )
-            create_note(headers, cand_id, note_text)
+            # Act on classification
+            if category == "score_0":
+                drop_candidate(headers, int(match_id))
+            elif category == "passati":
+                move_match(headers, match_id, to_stage_id)
+                print(f"  Test passato -> spostato in '{to_stage}'.")
+                if EMAIL_CHIACCHIERATA_BODY_FILE:
+                    send_templated_email(cand_email, EMAIL_SUBJECT, EMAIL_CHIACCHIERATA_BODY_FILE, cand_first_name)
+                    time.sleep(SLEEP_SECONDS)
+            elif category == "falliti":
+                drop_candidate(headers, int(match_id))
+                print(f"  Droppato.")
+                if EMAIL_DROP_BODY_FILE:
+                    send_templated_email(cand_email, EMAIL_SUBJECT, EMAIL_DROP_BODY_FILE, cand_first_name)
+                    time.sleep(SLEEP_SECONDS)
 
-        if test_score >= 80:
-            print(f"{cand_email}|{test_name}|{test_score}|{test_time_used}|{test_last_activity}")
-            passati_80 += 1
-
-            if non_fare_cose:
-                continue
-
-            move_match(headers, match_id, to_stage_id)
-            print(f"  Test passato -> spostato in '{to_stage}'.")
-
-            if email_chiacchierata_file:
-                send_templated_email(cand_email, email_subject, email_chiacchierata_file, cand_first_name)
-                time.sleep(sleep_seconds)
-                print("  Email chiacchierata inviata.")
-
-        elif test_score < 60:
-            falliti_60 += 1
-
-            print(f"  Test fallito.")
-            if non_fare_cose:
-                continue
-
-            drop_candidate(headers, int(match_id))
-            print(f"  Droppato.")
-
-            if email_drop_file:
-                send_templated_email(cand_email, email_subject, email_drop_file, cand_first_name)
-                time.sleep(sleep_seconds)
-                print("  Email drop inviata.")
-
-        else:
-            da_valutare += 1
-            print(f"  Da valutare.")
-
-            continue
-
-    print("")
-    print("passati:", passati_80)
-    print("falliti:", falliti_60)
-    print("da_valutare:", da_valutare)
-    print("test_count_0:", test_count_0)
-    print("test_count_2:", test_count_2)
-    print("stati_strani:", stati_strani)
-    print("invited:", invited)
-    print("score_0:", score_0)
-
-    totale = sum([passati_80, falliti_60, da_valutare, test_count_0, test_count_2, stati_strani, invited, score_0])
-    print("Totale:", totale)
+        print("")
+        for key, value in counts.items():
+            print(f"{key}: {value}")
+        print("Totale:", sum(counts.values()))
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ import time
 
 from dotenv import load_dotenv
 
-from services.gmail_service import send_templated_email
+from services.gmail_service import send_templated_email, EMAIL_SUBJECT
 from services.manatal_service import (
     build_headers,
     fetch_stage_ids,
@@ -15,7 +15,6 @@ from services.manatal_service import (
 load_dotenv()
 
 # ── Configuration ─────────────────────────────────────────────────────
-EMAIL_SUBJECT = "Candidatura Zupit"
 EMAIL_BODY_FILE = os.getenv("DROP_EMAIL_BODY_FILE")
 SLEEP_SECONDS = 65
 

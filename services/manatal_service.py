@@ -100,7 +100,7 @@ def fetch_job_matches(
                 continue
             if stage_name and str(stage.get("name") or "").strip().lower() != stage_name.strip().lower():
                 continue
-            if only_active and not match.get("is_active", False):
+            if only_active and match.get("is_active", False):
                 continue
             matches.append(match)
         url = absolute_url(data.get("next"))
@@ -204,6 +204,11 @@ def get_candidate_info(headers: Dict[str, str], email: str):
 
 def move_match(headers: Dict[str, str], match_id: int, stage_id: int) -> None:
     _manatal_patch(headers, f"{API_BASE}/matches/{match_id}/", json={"stage": {"id": stage_id}})
+
+
+def create_match(headers: Dict[str, str], job_id: str, candidate_id: int) -> Dict[str, object]:
+    url = f"{API_BASE}/matches/"
+    return _manatal_post(headers, url, json={"candidate": candidate_id, "job": job_id}).json()
 
 
 def drop_candidate(headers: Dict[str, str], match_id: int) -> None:

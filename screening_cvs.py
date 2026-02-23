@@ -35,14 +35,13 @@ LIMIT = None
 SYSTEM_PROMPT = (
     "Sei un assistente che esegue OCR e parsing di CV. "
     "Analizza il PDF allegato e restituisci SOLO un oggetto JSON conforme allo schema richiesto. "
-    "Non aggiungere testo fuori dal JSON."
+    "Estrai solo i fatti, non valutare. Non aggiungere testo fuori dal JSON."
 )
 
 USER_PROMPT = (
-    "estrarre informazioni strutturate\n"
-    "valutare 4 condizioni con spiegazione\n"
-    "determinare se il candidato é ACCETTATO o RIFIUTATO\n"
-    "INFORMAZIONI DA ESTRARRE PER OGNI CV\n"
+    "Estrai informazioni strutturate dal CV.\n"
+    "\n"
+    "INFORMAZIONI DA ESTRARRE:\n"
     "- Nome completo della persona\n"
     "- Posizione lavorativa attuale\n"
     "- Luogo di residenza / città\n"
@@ -53,26 +52,12 @@ USER_PROMPT = (
     "- Progetti personali extra-lavorativi citati nel CV (se presenti)\n"
     "- Esperienze lavorative o formative in settori diversi dallo sviluppo software (se presenti)\n"
     "- Se ha almeno 3 anni di esperienza fullstack nello sviluppo web\n"
-    "Se un dato non é ricavabile lascia la stringa vuota.\n"
-    "\n"
-    "2. VALUTAZIONE DELLE QUATTRO CONDIZIONI\n"
-    "Per ciascuna condizione restituisci value, spiegazione:\n"
-    "value: TRUE se verificata, FALSE se non verificata, NULL se non determinabile.\n"
-    "spiegazione: descrivi esattamente come sei arrivato alla valutazione (testo trovato,assunzioni,deduzioni ecc.).\n"
-    "\n"
-    "3. DEFINIZIONE DELLE CONDIZIONI\n"
-    "- ETA: TRUE se la persona NON ha più di 45 anni.\n"
-    "- BOOLEAN: TRUE se NON ha frequentato bootcamp (Boolean Careers, Epicode, 42 School, "
-    "Start2Impact, Develhope, Aulab, Ironhack, Le Wagon, ecc.).\n"
-    "- ACCENTURE: TRUE se NON ha più di 5 anni complessivi in società di consulenza IT "
-    "(Almaviva,Almawave,Reply,Accenture,Deloitte,KPMG,Engineering,DXC,NTT Data,Capgemini,Everis,Sogeti).\n"
-    "- ITALIANO: TRUE se parla italiano come madrelingua o livello molto alto (C1/C2). "
-    "FALSE: se il curriculum non è in italiano e se c'è menzione che sa altre lingue e non l'italiano >= C2\n"
-    "\n"
-    "4. CRITERIO DI ACCETTAZIONE\n"
-    "Fai un'operazione logica per discriminare tra:"
-    "- Decisione ACCETTATO se nessuna condizione é FALSE (possono essere TRUE o NULL). "
-    "- Decisione RIFIUTATO se almeno una condizione é FALSE.\n"
+    "- Anno di nascita (se presente o deducibile)\n"
+    "- Lingua in cui è scritto il CV\n"
+    "- Lingue conosciute con livello (madrelingua, A1, A2, B1, B2, C1, C2)\n"
+    "- Percorso di formazione: lista di istituti/scuole/bootcamp con tipo (università, bootcamp, corso online, ecc.)\n"
+    "- Esperienze lavorative: lista di aziende con anni di permanenza\n"
+    "Se un dato non é ricavabile lascia la stringa vuota o null.\n"
     "\n"
     "Restituisci un oggetto JSON con questa struttura:\n"
     "{\n"
@@ -86,15 +71,13 @@ USER_PROMPT = (
     '  "personal_projects": "",\n'
     '  "extra_tech": "",\n'
     '  "3y_exp_web": "",\n'
-    '  "conditions": {\n'
-    '    "eta": {"value": "TRUE|FALSE|NULL", "explanation": ""},\n'
-    '    "boolean": {"value": "TRUE|FALSE|NULL", "explanation": ""},\n'
-    '    "accenture": {"value": "TRUE|FALSE|NULL", "explanation": ""},\n'
-    '    "italiano": {"value": "TRUE|FALSE|NULL", "explanation": ""}\n'
-    "  },\n"
-    '  "decision": "ACCETTATO|RIFIUTATO"\n'
+    '  "birth_year": null,\n'
+    '  "cv_language": "",\n'
+    '  "languages": [{"language": "", "level": ""}],\n'
+    '  "education": [{"institution": "", "type": ""}],\n'
+    '  "work_experiences": [{"company": "", "years": 0.0}]\n'
     "}\n"
-    "Lascia eventuali stringhe vuote per i dati mancanti e NON inventare informazioni."
+    "NON inventare informazioni. Estrai solo ciò che è presente nel CV."
 )
 
 
@@ -149,6 +132,85 @@ def call_model_with_pdf_file(client: OpenAI, pdf_path: Path, model: str) -> Dict
 
 CONDITION_KEYS = ["eta", "boolean", "accenture", "italiano"]
 
+BOOTCAMP_NAMES = {
+    "boolean careers", "boolean", "epicode", "42 school", "42",
+    "start2impact", "develhope", "aulab", "ironhack", "le wagon",
+}
+
+CONSULTING_FIRMS = {
+    "almaviva", "almawave", "reply", "accenture", "deloitte", "kpmg",
+    "engineering", "dxc", "ntt data", "capgemini", "everis", "sogeti",
+}
+
+
+def evaluate_eta(raw: Dict[str, Any]) -> tuple:
+    """Età: FALSE se > 45 anni, TRUE se <= 45, NULL se non determinabile."""
+    birth_year = raw.get("birth_year")
+    if birth_year is None:
+        return "NULL", "Anno di nascita non presente nel CV."
+    try:
+        birth_year = int(birth_year)
+    except (ValueError, TypeError):
+        return "NULL", f"Anno di nascita non valido: {birth_year}"
+    current_year = datetime.now().year
+    age = current_year - birth_year
+    if age > 45:
+        return "FALSE", f"Nato nel {birth_year}, età stimata {age} (> 45)."
+    return "TRUE", f"Nato nel {birth_year}, età stimata {age} (<= 45)."
+
+
+def evaluate_boolean(raw: Dict[str, Any]) -> tuple:
+    """Boolean: FALSE se ha frequentato un bootcamp noto, TRUE altrimenti."""
+    education = raw.get("education") or []
+    for entry in education:
+        institution = (str(entry.get("institution", "")) or "").strip().lower()
+        for bootcamp in BOOTCAMP_NAMES:
+            if bootcamp in institution:
+                return "FALSE", f"Ha frequentato il bootcamp: {entry.get('institution')}."
+    return "TRUE", "Nessun bootcamp noto trovato nel percorso formativo."
+
+
+def evaluate_accenture(raw: Dict[str, Any]) -> tuple:
+    """Accenture: FALSE se > 5 anni complessivi in società di consulenza IT."""
+    work_experiences = raw.get("work_experiences") or []
+    total_years = 0.0
+    matched_companies = []
+    for entry in work_experiences:
+        company = (str(entry.get("company", "")) or "").strip().lower()
+        for firm in CONSULTING_FIRMS:
+            if firm in company:
+                years = 0.0
+                try:
+                    years = float(entry.get("years", 0) or 0)
+                except (ValueError, TypeError):
+                    pass
+                total_years += years
+                matched_companies.append(f"{entry.get('company')} ({years}a)")
+                break
+    if total_years > 5:
+        return "FALSE", f"Totale {total_years} anni in consulenza IT: {', '.join(matched_companies)}."
+    if matched_companies:
+        return "TRUE", f"Totale {total_years} anni in consulenza IT (<= 5): {', '.join(matched_companies)}."
+    return "TRUE", "Nessuna esperienza in società di consulenza IT note."
+
+
+def evaluate_italiano(raw: Dict[str, Any]) -> tuple:
+    """Italiano: TRUE se parla italiano madrelingua/C1/C2 o CV scritto in italiano."""
+    cv_language = (str(raw.get("cv_language", "")) or "").strip().lower()
+    if cv_language in ("italiano", "italian", "it"):
+        return "TRUE", "Il CV è scritto in italiano."
+
+    languages = raw.get("languages") or []
+    for entry in languages:
+        lang = (str(entry.get("language", "")) or "").strip().lower()
+        level = (str(entry.get("level", "")) or "").strip().lower()
+        if lang in ("italiano", "italian", "it"):
+            if any(kw in level for kw in ("madrelingua", "nativo", "native", "c1", "c2")):
+                return "TRUE", f"Italiano dichiarato a livello: {entry.get('level')}."
+            return "FALSE", f"Italiano dichiarato a livello: {entry.get('level')} (inferiore a C1)."
+
+    return "FALSE", "Italiano non menzionato e CV non in italiano."
+
 
 def hash_file(path: Path, chunk_size: int = 1_048_576) -> str:
     """Calcola SHA-256 del file leggendo a chunk."""
@@ -198,30 +260,28 @@ def move_duplicates(duplicates: Dict[str, List[Path]], target_dir: Path) -> None
             shutil.move(str(pdf_path), destination)
 
 
+EVALUATE_FUNCTIONS = {
+    "eta": evaluate_eta,
+    "boolean": evaluate_boolean,
+    "accenture": evaluate_accenture,
+    "italiano": evaluate_italiano,
+}
+
+
 def sanitize_fields(raw: Dict[str, Any]) -> Dict[str, str]:
-    """Normalizza i campi attesi, condizioni e decisione."""
+    """Normalizza i campi attesi, valuta condizioni in Python e determina decisione."""
     fields = ["full_name", "current_position", "location", "email", "phone", "linkedin", "github", "personal_projects", "extra_tech", "3y_exp_web"]
     cleaned: Dict[str, str] = {field: (str(raw.get(field, "")) or "").strip() for field in fields}
 
-    conditions_block = raw.get("conditions") or {}
     condition_values = []
     for key in CONDITION_KEYS:
-        condition_data = conditions_block.get(key) or {}
-        value = (str(condition_data.get("value", "") or "")).strip().upper()
-        explanation = (str(condition_data.get("explanation", "") or "")).strip()
-
+        evaluate_fn = EVALUATE_FUNCTIONS[key]
+        value, explanation = evaluate_fn(raw)
         cleaned[f"{key}_value"] = value
         cleaned[f"{key}_explanation"] = explanation
+        condition_values.append(value)
 
-        if value:
-            condition_values.append(value)
-
-    raw_decision = (str(raw.get("decision") or "")).strip().upper()
-    computed_decision = ""
-    if condition_values:
-        computed_decision = "RIFIUTATO" if "FALSE" in condition_values else "ACCETTATO"
-
-    cleaned["decision"] = raw_decision or computed_decision
+    cleaned["decision"] = "RIFIUTATO" if "FALSE" in condition_values else "ACCETTATO"
     return cleaned
 
 
@@ -299,6 +359,7 @@ def process_directory(
         print(f"[{idx}/{len(files)}] Lavoro su: {pdf_path.name}")
         note = ""
 
+        raw = {}
         try:
             raw = call_model_with_pdf_file(client, pdf_path, model)
             data = sanitize_fields(raw)

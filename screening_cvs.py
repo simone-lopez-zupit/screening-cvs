@@ -4,7 +4,6 @@ e organizza zip dei CV accettati/rifiutati usando GPT-4o per il parsing.
 """
 
 import base64
-import hashlib
 import json
 import os
 import shutil
@@ -19,6 +18,7 @@ from openpyxl.styles import PatternFill
 from openai import OpenAI
 from dotenv import load_dotenv
 
+from services.file_utils import hash_file
 from services.manatal_service import build_headers, get_candidate_info
 
 
@@ -211,17 +211,6 @@ def evaluate_italiano(raw: Dict[str, Any]) -> tuple:
 
     return "FALSE", "Italiano non menzionato e CV non in italiano."
 
-
-def hash_file(path: Path, chunk_size: int = 1_048_576) -> str:
-    """Calcola SHA-256 del file leggendo a chunk."""
-    digest = hashlib.sha256()
-    with path.open("rb") as f:
-        while True:
-            chunk = f.read(chunk_size)
-            if not chunk:
-                break
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def find_duplicates(input_dir: Path) -> Dict[str, List[Path]]:
@@ -430,7 +419,10 @@ def main() -> None:
 
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    excel_path = Path(f"cv_{timestamp_str}.xlsx")
+    output_dir = Path(f"output_{timestamp_str}")
+    output_dir.mkdir(exist_ok=True)
+
+    excel_path = output_dir / f"cv_{timestamp_str}.xlsx"
     write_rows_to_excel(rows, output_path=excel_path, headers=OUTPUT_FIELDS)
     print(f"Excel salvato in: {excel_path}")
 
@@ -445,12 +437,13 @@ def main() -> None:
         elif decision == "RIFIUTATO":
             rejected_files.append(pdf_path)
 
-    zip_accept_path = Path(f"cv_approvati_{timestamp_str}.zip")
-    zip_reject_path = Path(f"cv_rifiutati_{timestamp_str}.zip")
+    zip_accept_path = output_dir / f"cv_approvati_{timestamp_str}.zip"
+    zip_reject_path = output_dir / f"cv_rifiutati_{timestamp_str}.zip"
     create_zip(zip_accept_path, accepted_files)
     create_zip(zip_reject_path, rejected_files)
     print(f"Zip ACCETTATI: {zip_accept_path}")
     print(f"Zip RIFIUTATI: {zip_reject_path}")
+    print(f"\nOutput in: {output_dir}")
 
 
 if __name__ == "__main__":

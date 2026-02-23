@@ -1,12 +1,11 @@
 """
 Trova CV (PDF) della stessa persona inviati in più sottocartelle.
 Confronta per email estratta dal CV (via OpenAI) e per hash del file.
-Uso: python find_duplicate_cvs.py <cartella_padre>
+Uso: python find_duplicate_cvs.py
 """
 
 import base64
 import json
-import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -16,6 +15,11 @@ from openai import OpenAI
 from services.file_utils import hash_file
 
 load_dotenv()
+
+# ── Configuration ─────────────────────────────────────────────────────
+PARENT_DIR = "cvs_confronto"
+MODEL = "gpt-4o-mini"
+# ──────────────────────────────────────────────────────────────────
 
 EMAIL_PROMPT = (
     "Estrai SOLO l'indirizzo email dal CV allegato.\n"
@@ -29,7 +33,7 @@ def extract_email(client: OpenAI, pdf_path: Path) -> str | None:
         b64 = base64.b64encode(f.read()).decode()
 
     resp = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=MODEL,
         temperature=0,
         response_format={"type": "json_object"},
         messages=[
@@ -102,14 +106,9 @@ def find_duplicates_by_hash(parent: Path) -> dict[str, list[Path]]:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        print(f"Uso: python {Path(__file__).name} <cartella_padre>")
-        sys.exit(1)
-
-    parent = Path(sys.argv[1])
+    parent = Path(PARENT_DIR)
     if not parent.is_dir():
-        print(f"Errore: '{parent}' non è una cartella valida.")
-        sys.exit(1)
+        raise SystemExit(f"Cartella non trovata: {parent}")
 
     # --- Duplicati per file identico (hash) ---
     hash_dups = find_duplicates_by_hash(parent)

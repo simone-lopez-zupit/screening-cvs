@@ -57,3 +57,6 @@ cv_*.xlsx
 cv_approvati_*.zip
 cv_rifiutati_*.zip
 cvs_parsed*.csv
+cvs_confronto/
+cv_rifiutati_*/
+output_*/

@@ -307,6 +307,10 @@ OUTPUT_FIELDS = [
     "italiano_explanation",
     "decision",
     "manatal_link",
+    "manatal_job",
+    "manatal_stage",
+    "manatal_is_dropped",
+    "manatal_drop_date",
     "note",
 ]
 
@@ -369,11 +373,25 @@ def process_directory(
 
         cand_email = raw.get("email")
         if cand_email:
-            manatal_link, manatal_matches = get_candidate_info(headers, cand_email)
+            manatal_link, match_details = get_candidate_info(headers, cand_email)
         else:
-            manatal_link, manatal_matches = "", ""
+            manatal_link, match_details = "", []
 
-        row = {"file_name": pdf_path.name, **data, "manatal_link": manatal_link, "note": note}
+        manatal_jobs = "\n".join(m["job"] for m in match_details) if match_details else ""
+        manatal_stages = "\n".join(m["stage"] for m in match_details) if match_details else ""
+        manatal_dropped = "\n".join(str(m["is_dropped"]) for m in match_details) if match_details else ""
+        manatal_drop_dates = "\n".join(m["drop_date"] for m in match_details) if match_details else ""
+
+        row = {
+            "file_name": pdf_path.name,
+            **data,
+            "manatal_link": manatal_link,
+            "manatal_job": manatal_jobs,
+            "manatal_stage": manatal_stages,
+            "manatal_is_dropped": manatal_dropped,
+            "manatal_drop_date": manatal_drop_dates,
+            "note": note,
+        }
         rows.append(row)
 
         if pause > 0 and idx < len(files):

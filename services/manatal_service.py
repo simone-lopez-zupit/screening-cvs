@@ -186,18 +186,32 @@ def get_candidate_info(headers: Dict[str, str], email: str):
     base_link = "app.manatal.com/candidates/"
 
     if len(candidates) == 0:
-        return "", ""
+        return "", []
     if len(candidates) > 1:
-        return "SISTEMARE", "DUPLICATI"
+        return "SISTEMARE", []
 
     cand_id = candidates[0].get("id")
     url_matches: Optional[str] = f"{API_BASE}/candidates/{cand_id}/matches/"
     data = _manatal_get(headers, url_matches).json()
     matches = data.get("results", [])
 
-    matches = (f"{match.get('stage').get('name')}" for match in matches)
+    match_details = []
+    for m in matches:
+        stage = m.get("stage") or {}
+        job = m.get("job_position") or m.get("job") or {}
+        is_active = m.get("is_active", True)
+        is_dropped = not is_active
+        drop_date = ""
+        if is_dropped:
+            drop_date = (m.get("updated_at") or "")[:10]
+        match_details.append({
+            "job": job.get("position_name", "") if isinstance(job, dict) else str(job),
+            "stage": stage.get("name", ""),
+            "is_dropped": is_dropped,
+            "drop_date": drop_date,
+        })
 
-    return f"=HYPERLINK(\"{base_link}{cand_id}\")", "&CHAR(10)&".join(matches)
+    return f"=HYPERLINK(\"{base_link}{cand_id}\")", match_details
 
 
 # ── Match mutations ──────────────────────────────────────────────────

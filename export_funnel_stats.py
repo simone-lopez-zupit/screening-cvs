@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from openpyxl import Workbook
 
 from config.boards import BOARDS
-from services.manatal_service import build_headers, get_all_matches
+from services.manatal_service import build_headers, get_all_matches, _format_date_italian
 
 # ── Change this to switch board ───────────────────────────────────
 BOARD = "DEV"
@@ -128,7 +128,7 @@ def main() -> None:
 
     for since, to in date_ranges:
         rows.append({
-            "stage_name": f"Dal {since.strftime("%-d %B %Y")} al {to.strftime("%-d %B %Y")}",
+            "stage_name": f"Dal {_format_date_italian(since.strftime('%Y-%m-%d'))} al {_format_date_italian(to.strftime('%Y-%m-%d'))}",
         })
         matches = get_matches_grouped_by_stage(all_matches, since=since, to=to)
         rows.extend(matches)

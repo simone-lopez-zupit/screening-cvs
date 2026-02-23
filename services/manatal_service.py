@@ -10,6 +10,22 @@ import requests
 
 API_BASE = "https://api.manatal.com/open/v3"
 
+_ITALIAN_MONTHS = [
+    "gen", "feb", "mar", "apr", "mag", "giu",
+    "lug", "ago", "set", "ott", "nov", "dic",
+]
+
+
+def _format_date_italian(iso_date: str) -> str:
+    """Convert 'YYYY-MM-DD' to Italian format like '5 mag 2025'."""
+    if not iso_date or len(iso_date) < 10:
+        return iso_date
+    try:
+        year, month, day = iso_date[:10].split("-")
+        return f"{int(day)} {_ITALIAN_MONTHS[int(month) - 1]} {year}"
+    except (ValueError, IndexError):
+        return iso_date
+
 NOTE_TAG = "[GMAIL_SYNC]"
 
 def _get_api_key() -> str:
@@ -196,16 +212,29 @@ def get_candidate_info(headers: Dict[str, str], email: str):
     matches = data.get("results", [])
 
     match_details = []
+    job_cache = {}
     for m in matches:
         stage = m.get("stage") or {}
-        job = m.get("job_position") or m.get("job") or {}
         is_active = m.get("is_active", True)
         is_dropped = not is_active
         drop_date = ""
         if is_dropped:
-            drop_date = (m.get("updated_at") or "")[:10]
+            drop_date = _format_date_italian((m.get("updated_at") or "")[:10])
+
+        job_name = ""
+        job_ref = m.get("job_position") or m.get("job")
+        job_id = job_ref if not isinstance(job_ref, dict) else job_ref.get("id")
+        if job_id:
+            if job_id not in job_cache:
+                try:
+                    job_data = _manatal_get(headers, f"{API_BASE}/jobs/{job_id}/").json()
+                    job_cache[job_id] = job_data.get("position_name", str(job_id))
+                except Exception:
+                    job_cache[job_id] = str(job_id)
+            job_name = job_cache[job_id]
+
         match_details.append({
-            "job": job.get("position_name", "") if isinstance(job, dict) else str(job),
+            "job": job_name,
             "stage": stage.get("name", ""),
             "is_dropped": is_dropped,
             "drop_date": drop_date,

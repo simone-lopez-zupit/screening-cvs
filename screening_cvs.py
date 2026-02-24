@@ -20,12 +20,13 @@ from dotenv import load_dotenv
 
 from services.file_utils import hash_file
 from services.manatal_service import build_headers, get_candidate_info
+from find_duplicate_cvs import find_duplicates_by_hash, find_duplicates_by_email
 
 
 load_dotenv()
 
 # ── Configuration ─────────────────────────────────────────────────────
-INPUT_DIR = "cvs"
+INPUT_DIR = "cvs_confronto"
 DUPLICATES_DIR = "cvs_duplicati"
 MODEL = "gpt-4o"
 PAUSE = 0.0
@@ -391,59 +392,95 @@ def process_directory(
 
 def main() -> None:
     input_dir = Path(INPUT_DIR)
-    duplicates_dir = Path(DUPLICATES_DIR)
-
-    headers = build_headers()
 
     if not input_dir.is_dir():
         raise SystemExit(f"Cartella di input non trovata: {input_dir}")
-    duplicates = find_duplicates(input_dir)
-    if duplicates:
-        print("Duplicati trovati (hash -> file):")
-        for file_hash, paths in duplicates.items():
-            print(f"\n{file_hash}:")
+
+    # ── Cross-folder duplicate detection ──────────────────────────────
+    print("=== Controllo duplicati tra sottocartelle ===\n")
+
+    hash_dups = find_duplicates_by_hash(input_dir)
+    if hash_dups:
+        print(f"\n{len(hash_dups)} CV identici (stesso file) in più cartelle:\n")
+        for paths in hash_dups.values():
+            print(f"  {paths[0].name}")
             for p in paths:
-                print(f"  - {p.name}")
-        move_duplicates(duplicates, duplicates_dir)
-        print(f"\nDuplicati spostati in: {duplicates_dir}")
-    else:
-        print("Nessun duplicato trovato.")
+                print(f"    - {p.parent.name}")
+            print()
 
-    rows = process_directory(
-        headers=headers,
-        input_dir=input_dir,
-        model=MODEL,
-        pause=PAUSE,
-        limit=LIMIT
-    )
+    print("\nEstrazione email dai CV...\n")
+    email_dups = find_duplicates_by_email(input_dir)
+    if email_dups:
+        print(f"\n{len(email_dups)} persone con CV in più cartelle (stessa email):\n")
+        for email, paths in email_dups.items():
+            print(f"  {email}")
+            for p in paths:
+                print(f"    - {p.parent.name}/{p.name}")
+            print()
 
+    if not hash_dups and not email_dups:
+        print("Nessun CV duplicato trovato tra le sottocartelle.\n")
+
+    # ── Process each subfolder ────────────────────────────────────────
+    subfolders = sorted(p for p in input_dir.iterdir() if p.is_dir())
+    if not subfolders:
+        raise SystemExit(f"Nessuna sottocartella trovata in: {input_dir}")
+
+    headers = build_headers()
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    output_dir = Path(f"output_{timestamp_str}")
-    output_dir.mkdir(exist_ok=True)
+    for subfolder in subfolders:
+        print(f"\n{'='*60}")
+        print(f"=== Screening: {subfolder.name} ===")
+        print(f"{'='*60}\n")
 
-    excel_path = output_dir / f"cv_{timestamp_str}.xlsx"
-    write_rows_to_excel(rows, output_path=excel_path, headers=OUTPUT_FIELDS)
-    print(f"Excel salvato in: {excel_path}")
+        # Dedup within subfolder
+        duplicates_dir = subfolder / DUPLICATES_DIR
+        duplicates = find_duplicates(subfolder)
+        if duplicates:
+            print("Duplicati interni trovati (hash -> file):")
+            for file_hash, paths in duplicates.items():
+                print(f"\n{file_hash}:")
+                for p in paths:
+                    print(f"  - {p.name}")
+            move_duplicates(duplicates, duplicates_dir)
+            print(f"\nDuplicati spostati in: {duplicates_dir}")
+        else:
+            print("Nessun duplicato interno trovato.")
 
-    accepted_files: List[Path] = []
-    rejected_files: List[Path] = []
+        rows = process_directory(
+            headers=headers,
+            input_dir=subfolder,
+            model=MODEL,
+            pause=PAUSE,
+            limit=LIMIT,
+        )
 
-    for row in rows:
-        decision = (row.get("decision") or "").upper()
-        pdf_path = input_dir / row.get("file_name", "")
-        if decision == "ACCETTATO":
-            accepted_files.append(pdf_path)
-        elif decision == "RIFIUTATO":
-            rejected_files.append(pdf_path)
+        output_dir = Path(f"output_{subfolder.name}_{timestamp_str}")
+        output_dir.mkdir(exist_ok=True)
 
-    zip_accept_path = output_dir / f"cv_approvati_{timestamp_str}.zip"
-    zip_reject_path = output_dir / f"cv_rifiutati_{timestamp_str}.zip"
-    create_zip(zip_accept_path, accepted_files)
-    create_zip(zip_reject_path, rejected_files)
-    print(f"Zip ACCETTATI: {zip_accept_path}")
-    print(f"Zip RIFIUTATI: {zip_reject_path}")
-    print(f"\nOutput in: {output_dir}")
+        excel_path = output_dir / f"cv_{subfolder.name}_{timestamp_str}.xlsx"
+        write_rows_to_excel(rows, output_path=excel_path, headers=OUTPUT_FIELDS)
+        print(f"Excel salvato in: {excel_path}")
+
+        accepted_files: List[Path] = []
+        rejected_files: List[Path] = []
+
+        for row in rows:
+            decision = (row.get("decision") or "").upper()
+            pdf_path = subfolder / row.get("file_name", "")
+            if decision == "ACCETTATO":
+                accepted_files.append(pdf_path)
+            elif decision == "RIFIUTATO":
+                rejected_files.append(pdf_path)
+
+        zip_accept_path = output_dir / f"cv_approvati_{subfolder.name}_{timestamp_str}.zip"
+        zip_reject_path = output_dir / f"cv_rifiutati_{subfolder.name}_{timestamp_str}.zip"
+        create_zip(zip_accept_path, accepted_files)
+        create_zip(zip_reject_path, rejected_files)
+        print(f"Zip ACCETTATI: {zip_accept_path}")
+        print(f"Zip RIFIUTATI: {zip_reject_path}")
+        print(f"\nOutput in: {output_dir}")
 
 
 if __name__ == "__main__":

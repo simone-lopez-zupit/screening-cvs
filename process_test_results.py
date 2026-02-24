@@ -36,8 +36,7 @@ NON_FARE_COSE = True
 SLEEP_SECONDS = 85
 
 # ── Toggle which boards to process ───────────────────────────────
-PROCESS_TL = False
-PROCESS_DEV = True
+BOARD_ORDER = ["DEV", "TL"]
 # ──────────────────────────────────────────────────────────────────
 
 
@@ -235,13 +234,7 @@ def main() -> None:
 
     df = format_df(df)
 
-    boards_to_process = []
-    if PROCESS_TL:
-        boards_to_process.append("TL")
-    if PROCESS_DEV:
-        boards_to_process.append("DEV")
-
-    for board in boards_to_process:
+    for board in BOARD_ORDER:
         cfg = BOARDS[board]
         job_id = cfg["job_id"]
         from_stage = cfg["stages"]["test_preliminare"]
@@ -267,6 +260,7 @@ def main() -> None:
             "invited": 0,
             "score_0": 0,
         }
+        summary_rows: list[tuple[str, str, str, str, str]] = []
 
         for idx, (match, candidate) in enumerate(selected, start=1):
             cand_id = int(match.get("candidate"))
@@ -290,14 +284,20 @@ def main() -> None:
             elif category == "da_valutare":
                 print(f"  Da valutare.")
 
-            if NON_FARE_COSE or test is None:
-                continue
+            manatal_link = f"https://app.manatal.com/candidates/{cand_id}"
+            test_name = test["name"] if test is not None else ""
+            test_score = f"{test['score']}/100" if test is not None and pd.notna(test["score"]) else ""
+            test_time = test["time_used"] if test is not None else ""
+            summary_rows.append((manatal_link, cand_email, test_name, test_score, test_time))
 
             # Write testdome note
             if category in ("passati", "falliti", "da_valutare"):
                 if not has_testdome_note(cand_id, headers=headers):
                     create_note(headers, cand_id,
-                        f"Testdome: {test['score']}%  |  {test['name']}  |  ({test['time_used']})\nLink: {test['link']}")
+                                f"Testdome: {test['score']}%  |  {test['name']}  |  ({test['time_used']})\nLink: {test['link']}")
+
+            if NON_FARE_COSE or test is None:
+                continue
 
             # Act on classification
             if category == "score_0":
@@ -319,6 +319,10 @@ def main() -> None:
         for key, value in counts.items():
             print(f"{key}: {value}")
         print("Totale:", sum(counts.values()))
+
+        print(f"\n── Riepilogo {board} ──")
+        for link, email, t_name, t_score, t_time in summary_rows:
+            print(f"{link} ({email}) | {t_name} | {t_score} | {t_time}")
 
 
 if __name__ == "__main__":

@@ -34,9 +34,9 @@ SUBJECT_PREFIXES = {
 }
 
 # ── Order in which boards are processed ───────────────────────────
-import json as _json
-BOARD_ORDER = _json.loads(os.getenv("SCREENING_PARAM_BOARD_ORDER", '["TL", "DEV"]'))
-MATCH_MAX_AGE_DAYS = 30
+BOARD_ORDER = [b for b in ["TL", "DEV"]
+               if os.getenv(f"SCREENING_PARAM_BOARD_{b}", "true").lower() == "true"]
+MATCH_MAX_AGE_DAYS = 7
 # ──────────────────────────────────────────────────────────────────
 
 log = setup_logger("gmail_manatal")

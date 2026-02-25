@@ -151,7 +151,14 @@ async function loadCommands() {
   commands.forEach(c => commandsById[c.id] = c);
   const el = document.getElementById("commands");
   el.innerHTML = "";
+  let lastGroup = null;
   commands.forEach(cmd => {
+    if (lastGroup !== null && cmd.group !== lastGroup) {
+      const sep = document.createElement("div");
+      sep.style.cssText = "height: 1px; background: #ddd; margin: 8px 0;";
+      el.appendChild(sep);
+    }
+    lastGroup = cmd.group;
     const btn = document.createElement("button");
     btn.className = "cmd-btn";
     btn.innerHTML = (cmd.icon ? `<i class="fa-solid ${cmd.icon}" style="margin-right: 8px; width: 16px; text-align: center; color: #4a90d9;"></i>` : "") + cmd.name;

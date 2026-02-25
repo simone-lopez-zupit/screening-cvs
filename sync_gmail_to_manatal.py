@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 import requests
@@ -33,7 +34,9 @@ SUBJECT_PREFIXES = {
 }
 
 # ── Order in which boards are processed ───────────────────────────
-BOARD_ORDER = ["TL", "DEV"]
+import json as _json
+BOARD_ORDER = _json.loads(os.getenv("SCREENING_PARAM_BOARD_ORDER", '["TL", "DEV"]'))
+MATCH_MAX_AGE_DAYS = 30
 # ──────────────────────────────────────────────────────────────────
 
 log = setup_logger("gmail_manatal")
@@ -86,6 +89,19 @@ def _process_board(board_name, headers, gmail_service):
     log.info("Total unique candidates across all stages: %d", len(matches))
     if not matches:
         log.warning("No matches found for %s.", board_name)
+        return
+
+    # Filter matches created within the last MATCH_MAX_AGE_DAYS days
+    cutoff = datetime.now(timezone.utc) - timedelta(days=MATCH_MAX_AGE_DAYS)
+    before = len(matches)
+    matches = [
+        m for m in matches
+        if datetime.fromisoformat(m["created_at"].replace("Z", "+00:00")) >= cutoff
+    ]
+    log.info("Filtered to %d matches created in the last %d days (excluded %d)",
+             len(matches), MATCH_MAX_AGE_DAYS, before - len(matches))
+    if not matches:
+        log.warning("No recent matches for %s.", board_name)
         return
 
     # Step 2 — For each match, get candidate email, then search Gmail

@@ -4,12 +4,15 @@ import sys
 from pathlib import Path
 
 from web.commands import COMMANDS_BY_ID
-from web.db import append_output, finish_run
+from web.db import append_output, finish_run, set_run_pid, get_run_pid
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Active WebSocket connections per run_id
 _ws_clients: dict[int, set] = {}
+
+# Active processes per run_id
+_processes: dict[int, asyncio.subprocess.Process] = {}
 
 
 def register_ws(run_id: int, ws):
@@ -72,6 +75,9 @@ async def run_script(run_id: int, command_id: str, params: dict) -> None:
         await _broadcast(run_id, {"type": "finished", "exit_code": 1})
         return
 
+    _processes[run_id] = proc
+    set_run_pid(run_id, proc.pid)
+
     while True:
         line = await proc.stdout.readline()
         if not line:
@@ -81,5 +87,33 @@ async def run_script(run_id: int, command_id: str, params: dict) -> None:
         await _broadcast(run_id, {"type": "output", "data": text})
 
     exit_code = await proc.wait()
+    _processes.pop(run_id, None)
     finish_run(run_id, exit_code)
     await _broadcast(run_id, {"type": "finished", "exit_code": exit_code})
+
+
+def stop_run(run_id: int) -> bool:
+    import os
+    import signal
+
+    killed = False
+
+    # Try in-memory reference first
+    proc = _processes.pop(run_id, None)
+    if proc is not None:
+        proc.kill()
+        killed = True
+
+    # Fallback: kill by PID from DB (survives server reloads)
+    if not killed:
+        pid = get_run_pid(run_id)
+        if pid:
+            try:
+                os.kill(pid, signal.SIGKILL)
+                killed = True
+            except ProcessLookupError:
+                pass  # process already dead
+
+    # Always mark as finished in DB
+    finish_run(run_id, -9)
+    return True

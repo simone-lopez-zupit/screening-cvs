@@ -36,8 +36,8 @@ NON_FARE_COSE = os.getenv("SCREENING_PARAM_NON_FARE_COSE", "true").lower() == "t
 SLEEP_SECONDS = 85
 
 # ── Toggle which boards to process ───────────────────────────────
-import json as _json
-BOARD_ORDER = _json.loads(os.getenv("SCREENING_PARAM_BOARD_ORDER", '["DEV", "TL"]'))
+BOARD_ORDER = [b for b in ["DEV", "TL"]
+               if os.getenv(f"SCREENING_PARAM_BOARD_{b}", "true").lower() == "true"]
 # ──────────────────────────────────────────────────────────────────
 
 

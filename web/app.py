@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from web.commands import COMMANDS, COMMANDS_BY_ID
 from web.db import init_db, create_run, list_runs, get_run
-from web.runner import run_script, register_ws, unregister_ws
+from web.runner import run_script, stop_run, register_ws, unregister_ws
 
 app = FastAPI()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -76,6 +76,13 @@ async def api_start_run(req: RunRequest):
     run_id = create_run(req.command_id, req.params)
     asyncio.create_task(run_script(run_id, req.command_id, req.params))
     return {"run_id": run_id}
+
+
+@app.post("/api/runs/{run_id}/stop")
+async def api_stop_run(run_id: int):
+    if stop_run(run_id):
+        return {"ok": True}
+    return JSONResponse({"error": "run not active"}, status_code=404)
 
 
 @app.websocket("/ws/runs/{run_id}")

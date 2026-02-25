@@ -25,10 +25,16 @@ def init_db() -> None:
             output      TEXT    NOT NULL DEFAULT '',
             started_at  TEXT,
             finished_at TEXT,
-            exit_code   INTEGER
+            exit_code   INTEGER,
+            pid         INTEGER
         )
         """
     )
+    # Add pid column if missing (migration for existing DBs)
+    try:
+        conn.execute("ALTER TABLE runs ADD COLUMN pid INTEGER")
+    except sqlite3.OperationalError:
+        pass  # column already exists
     conn.commit()
     conn.close()
 
@@ -43,6 +49,20 @@ def create_run(command_id: str, params: dict) -> int:
     conn.commit()
     conn.close()
     return run_id
+
+
+def set_run_pid(run_id: int, pid: int) -> None:
+    conn = _connect()
+    conn.execute("UPDATE runs SET pid = ? WHERE id = ?", (pid, run_id))
+    conn.commit()
+    conn.close()
+
+
+def get_run_pid(run_id: int) -> int | None:
+    conn = _connect()
+    row = conn.execute("SELECT pid FROM runs WHERE id = ?", (run_id,)).fetchone()
+    conn.close()
+    return row["pid"] if row else None
 
 
 def append_output(run_id: int, text: str) -> None:

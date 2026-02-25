@@ -10,8 +10,9 @@ from openpyxl import Workbook
 from config.boards import BOARDS
 from services.manatal_service import build_headers, get_all_matches, _format_date_italian
 
-# ── Change this to switch board ───────────────────────────────────
-BOARD = os.getenv("SCREENING_PARAM_BOARD", "DEV")
+# ── Toggle which boards to export ─────────────────────────────────
+BOARD_ORDER = [b for b in ["DEV", "TL"]
+               if os.getenv(f"SCREENING_PARAM_BOARD_{b}", "true").lower() == "true"]
 # ──────────────────────────────────────────────────────────────────
 
 OUTPUT_FIELDS = [
@@ -93,12 +94,18 @@ def write_rows_to_excel(rows: List[Dict[str, str]], output_path: Path, headers: 
 def main() -> None:
     load_dotenv()
 
+    headers = build_headers()
+    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    for BOARD in BOARD_ORDER:
+        print(f"══ Exporting board: {BOARD} ══")
+        _export_board(BOARD, headers, timestamp_str)
+
+
+def _export_board(BOARD, headers, timestamp_str) -> None:
     cfg = BOARDS[BOARD]
     job_id = cfg["job_id"]
 
-    headers = build_headers()
-
-    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     all_matches = get_all_matches(headers=headers, job_id=job_id)
 
     date_ranges = [
@@ -134,7 +141,7 @@ def main() -> None:
         rows.extend(matches)
         rows.append({})
 
-    excel_path = Path(f"funnel_{timestamp_str}.xlsx")
+    excel_path = Path(f"funnel_{BOARD}_{timestamp_str}.xlsx")
     write_rows_to_excel(rows, output_path=excel_path, headers=OUTPUT_FIELDS)
     print(f"Excel salvato in: {excel_path}")
 

@@ -20,8 +20,9 @@ EMAIL_BODY_FILE = os.getenv("DROP_EMAIL_BODY_FILE")
 SLEEP_SECONDS = 65
 
 # ── Toggle which boards to drop ──────────────────────────────────
-DROP_TL = os.getenv("SCREENING_PARAM_DROP_TL", "false").lower() == "true"
-DROP_DEV = os.getenv("SCREENING_PARAM_DROP_DEV", "true").lower() == "true"
+DROP_TL = os.getenv("SCREENING_PARAM_BOARD_TL", "true").lower() == "true"
+DROP_DEV = os.getenv("SCREENING_PARAM_BOARD_DEV", "true").lower() == "true"
+STAGE_KEY = os.getenv("SCREENING_PARAM_STAGE_NAME", "nuova_candidatura")
 # ──────────────────────────────────────────────────────────────────
 
 
@@ -37,7 +38,7 @@ def main() -> None:
     for board in boards_to_drop:
         cfg = BOARDS[board]
         job_id = cfg["job_id"]
-        stage_name = cfg["stages"]["nuova_candidatura"]
+        stage_name = cfg["stages"][STAGE_KEY]
         print(f"\n══ {board} / {stage_name} ══")
 
         stage_map = fetch_stage_ids(headers, [stage_name])

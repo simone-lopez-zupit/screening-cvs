@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Screening CVs</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; background: #f5f5f5; color: #222; height: 100vh; display: flex; flex-direction: column; }
+header { background: #1a1a2e; color: #eee; padding: 12px 20px; font-size: 16px; font-weight: 600; }
+.layout { display: flex; flex: 1; overflow: hidden; }
+
+/* Left column — commands */
+.col-commands { width: 200px; min-width: 200px; background: #fff; border-right: 1px solid #ddd; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.col-commands h3 { font-size: 13px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
+.cmd-btn { display: block; width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 6px; background: #fff; font-size: 13px; cursor: pointer; text-align: left; transition: background 0.15s; }
+.cmd-btn:hover { background: #e8f0fe; border-color: #4a90d9; }
+
+/* Center column — runs list */
+.col-runs { flex: 1; overflow-y: auto; padding: 16px; }
+.col-runs h3 { font-size: 13px; text-transform: uppercase; color: #888; margin-bottom: 8px; }
+.runs-table { width: 100%; border-collapse: collapse; }
+.runs-table th { text-align: left; font-size: 11px; text-transform: uppercase; color: #999; padding: 6px 10px; border-bottom: 2px solid #ddd; }
+.runs-table td { padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 13px; cursor: pointer; }
+.runs-table tr:hover td { background: #f0f4ff; }
+.runs-table tr.active td { background: #dce7fb; }
+.status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.status.running { background: #f0ad4e; animation: pulse 1s infinite; }
+.status.completed { background: #5cb85c; }
+.status.failed { background: #d9534f; }
+.status.pending { background: #aaa; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+/* Right column — detail */
+.col-detail { width: 420px; min-width: 320px; background: #fff; border-left: 1px solid #ddd; display: flex; flex-direction: column; overflow: hidden; }
+.detail-header { padding: 16px; border-bottom: 1px solid #eee; }
+.detail-header h3 { font-size: 15px; margin-bottom: 8px; }
+.detail-meta { font-size: 12px; color: #666; line-height: 1.8; }
+.detail-meta span { font-weight: 600; color: #333; }
+.detail-output { flex: 1; overflow-y: auto; padding: 12px 16px; background: #1a1a2e; color: #d4d4d4; font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+.detail-empty { display: flex; align-items: center; justify-content: center; flex: 1; color: #999; font-size: 13px; }
+
+/* Modal overlay */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: #fff; border-radius: 10px; padding: 24px; width: 400px; max-width: 90vw; box-shadow: 0 8px 30px rgba(0,0,0,0.2); }
+.modal h3 { margin-bottom: 16px; font-size: 16px; }
+.modal-field { margin-bottom: 14px; }
+.modal-field label { display: block; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 4px; }
+.modal-field input[type=text] { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+.modal-field .checkbox-group { display: flex; gap: 12px; flex-wrap: wrap; }
+.modal-field .checkbox-group label { font-weight: normal; font-size: 13px; display: flex; align-items: center; gap: 4px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.btn { padding: 8px 18px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 500; }
+.btn-cancel { background: #eee; color: #333; }
+.btn-cancel:hover { background: #ddd; }
+.btn-run { background: #4a90d9; color: #fff; }
+.btn-run:hover { background: #3a7bc8; }
+.modal-field select { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+
+/* Emails section */
+.emails-section { padding: 16px; border-top: 1px solid #ddd; margin-top: 8px; }
+.emails-section h3 { font-size: 13px; text-transform: uppercase; color: #888; margin-bottom: 8px; }
+.email-btn { display: block; width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; background: #fff; font-size: 12px; cursor: pointer; text-align: left; transition: background 0.15s; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.email-btn:hover { background: #fef3e0; border-color: #e8a735; }
+.email-btn.active { background: #fef3e0; border-color: #e8a735; }
+
+/* Email editor overlay */
+.email-editor-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; align-items: center; justify-content: center; }
+.email-editor-overlay.open { display: flex; }
+.email-editor { background: #fff; border-radius: 10px; padding: 24px; width: 700px; max-width: 90vw; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 8px 30px rgba(0,0,0,0.2); }
+.email-editor h3 { margin-bottom: 12px; font-size: 16px; }
+.email-editor textarea { flex: 1; min-height: 400px; width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; line-height: 1.6; resize: vertical; }
+.email-editor .modal-actions { margin-top: 16px; }
+.btn-save { background: #5cb85c; color: #fff; }
+.btn-save:hover { background: #4cae4c; }
+.btn-save:disabled { background: #aaa; cursor: not-allowed; }
+.save-feedback { font-size: 12px; color: #5cb85c; margin-right: auto; align-self: center; }
+</style>
+</head>
+<body>
+<header>Screening CVs — Dashboard</header>
+<div class="layout">
+  <div class="col-commands" style="overflow-y: auto;">
+    <h3>Commands</h3>
+    <div id="commands"></div>
+    <div class="emails-section">
+      <h3>Email Templates</h3>
+      <div id="email-list"></div>
+    </div>
+  </div>
+  <div class="col-runs">
+    <h3>Runs</h3>
+    <table class="runs-table">
+      <thead><tr><th>#</th><th>Command</th><th>Status</th><th>Started</th></tr></thead>
+      <tbody id="runs-body"></tbody>
+    </table>
+  </div>
+  <div class="col-detail">
+    <div id="detail-content" style="display:none;">
+      <div class="detail-header">
+        <h3 id="detail-title"></h3>
+        <div class="detail-meta">
+          <div>Status: <span id="detail-status"></span></div>
+          <div>Started: <span id="detail-started"></span></div>
+          <div>Finished: <span id="detail-finished"></span></div>
+          <div>Exit code: <span id="detail-exit"></span></div>
+          <div>Params: <span id="detail-params"></span></div>
+        </div>
+      </div>
+      <div class="detail-output" id="detail-output"></div>
+    </div>
+    <div class="detail-empty" id="detail-empty">Select a run to view details</div>
+  </div>
+</div>
+
+<div class="email-editor-overlay" id="email-editor-overlay">
+  <div class="email-editor">
+    <h3 id="email-editor-title"></h3>
+    <textarea id="email-editor-textarea"></textarea>
+    <div class="modal-actions">
+      <span class="save-feedback" id="email-save-feedback"></span>
+      <button class="btn btn-cancel" onclick="closeEmailEditor()">Close</button>
+      <button class="btn btn-save" id="email-save-btn" onclick="saveEmail()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-title"></h3>
+    <div id="modal-fields"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-run" id="modal-run-btn">Run</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let commands = [];
+let selectedRunId = null;
+let activeWs = null;
+let commandsById = {};
+
+async function loadCommands() {
+  const res = await fetch("/api/commands");
+  commands = await res.json();
+  commandsById = {};
+  commands.forEach(c => commandsById[c.id] = c);
+  const el = document.getElementById("commands");
+  el.innerHTML = "";
+  commands.forEach(cmd => {
+    const btn = document.createElement("button");
+    btn.className = "cmd-btn";
+    btn.textContent = cmd.name;
+    btn.onclick = () => openModal(cmd);
+    el.appendChild(btn);
+  });
+}
+
+function openModal(cmd) {
+  document.getElementById("modal-title").textContent = "Run: " + cmd.name;
+  const fields = document.getElementById("modal-fields");
+  fields.innerHTML = "";
+  cmd.inputs.forEach(inp => {
+    const div = document.createElement("div");
+    div.className = "modal-field";
+    const label = document.createElement("label");
+    label.textContent = inp.label;
+    div.appendChild(label);
+
+    if (inp.type === "bool") {
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = inp.default;
+      cb.dataset.name = inp.name;
+      cb.dataset.inputType = "bool";
+      div.appendChild(cb);
+    } else if (inp.type === "multi-select") {
+      const group = document.createElement("div");
+      group.className = "checkbox-group";
+      inp.options.forEach(opt => {
+        const lbl = document.createElement("label");
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = opt;
+        cb.checked = inp.default.includes(opt);
+        cb.dataset.name = inp.name;
+        cb.dataset.inputType = "multi-select";
+        lbl.appendChild(cb);
+        lbl.appendChild(document.createTextNode(opt));
+        group.appendChild(lbl);
+      });
+      div.appendChild(group);
+    } else if (inp.type === "select") {
+      const sel = document.createElement("select");
+      sel.dataset.name = inp.name;
+      sel.dataset.inputType = "select";
+      inp.options.forEach(opt => {
+        const o = document.createElement("option");
+        o.value = opt; o.textContent = opt;
+        if (opt === inp.default) o.selected = true;
+        sel.appendChild(o);
+      });
+      div.appendChild(sel);
+    } else {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = inp.default || "";
+      input.dataset.name = inp.name;
+      input.dataset.inputType = "text";
+      div.appendChild(input);
+    }
+    fields.appendChild(div);
+  });
+
+  document.getElementById("modal-run-btn").onclick = () => confirmRun(cmd.id);
+  document.getElementById("modal-overlay").classList.add("open");
+}
+
+function closeModal() {
+  document.getElementById("modal-overlay").classList.remove("open");
+}
+
+function gatherParams() {
+  const params = {};
+  document.querySelectorAll("#modal-fields [data-name]").forEach(el => {
+    const name = el.dataset.name;
+    const type = el.dataset.inputType;
+    if (type === "bool") {
+      params[name] = el.checked;
+    } else if (type === "multi-select") {
+      if (!params[name]) params[name] = [];
+      if (el.checked) params[name].push(el.value);
+    } else if (type === "select") {
+      params[name] = el.value;
+    } else {
+      params[name] = el.value;
+    }
+  });
+  return params;
+}
+
+async function confirmRun(commandId) {
+  const params = gatherParams();
+  closeModal();
+  const res = await fetch("/api/runs", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({command_id: commandId, params})
+  });
+  const data = await res.json();
+  if (data.run_id) {
+    selectRun(data.run_id);
+    loadRuns();
+  }
+}
+
+function fmtTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleTimeString("it-IT", {hour: "2-digit", minute: "2-digit", second: "2-digit"});
+}
+
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("it-IT") + " " + fmtTime(iso);
+}
+
+async function loadRuns() {
+  const res = await fetch("/api/runs");
+  const runs = await res.json();
+  const tbody = document.getElementById("runs-body");
+  tbody.innerHTML = "";
+  runs.forEach(r => {
+    const tr = document.createElement("tr");
+    if (r.id === selectedRunId) tr.classList.add("active");
+    const cmdName = commandsById[r.command_id]?.name || r.command_id;
+    tr.innerHTML = `
+      <td>${r.id}</td>
+      <td><span class="status ${r.status}"></span>${cmdName}</td>
+      <td>${r.status}</td>
+      <td>${fmtTime(r.started_at)}</td>
+    `;
+    tr.onclick = () => selectRun(r.id);
+    tbody.appendChild(tr);
+  });
+}
+
+async function selectRun(runId) {
+  selectedRunId = runId;
+  if (activeWs) { activeWs.close(); activeWs = null; }
+
+  const res = await fetch(`/api/runs/${runId}`);
+  const run = await res.json();
+  const cmdName = commandsById[run.command_id]?.name || run.command_id;
+
+  document.getElementById("detail-empty").style.display = "none";
+  document.getElementById("detail-content").style.display = "flex";
+  document.getElementById("detail-content").style.flexDirection = "column";
+  document.getElementById("detail-content").style.flex = "1";
+  document.getElementById("detail-title").textContent = cmdName;
+  document.getElementById("detail-status").textContent = run.status;
+  document.getElementById("detail-started").textContent = fmtDate(run.started_at);
+  document.getElementById("detail-finished").textContent = fmtDate(run.finished_at);
+  document.getElementById("detail-exit").textContent = run.exit_code ?? "—";
+  document.getElementById("detail-params").textContent = Object.keys(run.params).length ? JSON.stringify(run.params) : "none";
+
+  const outputEl = document.getElementById("detail-output");
+  outputEl.textContent = run.output || "";
+  outputEl.scrollTop = outputEl.scrollHeight;
+
+  // Highlight active row
+  document.querySelectorAll(".runs-table tr").forEach(tr => tr.classList.remove("active"));
+  document.querySelectorAll(".runs-table tr").forEach(tr => {
+    if (tr.children[0]?.textContent == runId) tr.classList.add("active");
+  });
+
+  if (run.status === "running") {
+    connectWs(runId);
+  }
+}
+
+function connectWs(runId) {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${proto}//${location.host}/ws/runs/${runId}`);
+  activeWs = ws;
+  ws.onmessage = (evt) => {
+    const msg = JSON.parse(evt.data);
+    if (msg.type === "output") {
+      const outputEl = document.getElementById("detail-output");
+      outputEl.textContent += msg.data;
+      outputEl.scrollTop = outputEl.scrollHeight;
+    } else if (msg.type === "finished") {
+      document.getElementById("detail-status").textContent = msg.exit_code === 0 ? "completed" : "failed";
+      document.getElementById("detail-exit").textContent = msg.exit_code;
+      document.getElementById("detail-finished").textContent = fmtDate(new Date().toISOString());
+      loadRuns();
+      ws.close();
+    }
+  };
+}
+
+// ── Email templates ──
+let emails = [];
+let currentEmailFilename = null;
+
+async function loadEmails() {
+  const res = await fetch("/api/emails");
+  emails = await res.json();
+  const el = document.getElementById("email-list");
+  el.innerHTML = "";
+  emails.forEach(em => {
+    const btn = document.createElement("button");
+    btn.className = "email-btn";
+    btn.textContent = em.filename.replace(/_/g, " ").replace(".txt", "");
+    btn.title = em.filename;
+    btn.onclick = () => openEmailEditor(em.filename, em.content);
+    el.appendChild(btn);
+  });
+}
+
+function openEmailEditor(filename, content) {
+  currentEmailFilename = filename;
+  document.getElementById("email-editor-title").textContent = filename;
+  document.getElementById("email-editor-textarea").value = content;
+  document.getElementById("email-save-feedback").textContent = "";
+  document.getElementById("email-save-btn").disabled = false;
+  document.getElementById("email-editor-overlay").classList.add("open");
+}
+
+function closeEmailEditor() {
+  document.getElementById("email-editor-overlay").classList.remove("open");
+  currentEmailFilename = null;
+}
+
+async function saveEmail() {
+  const content = document.getElementById("email-editor-textarea").value;
+  const btn = document.getElementById("email-save-btn");
+  const feedback = document.getElementById("email-save-feedback");
+  btn.disabled = true;
+  feedback.textContent = "Saving...";
+  const res = await fetch(`/api/emails/${currentEmailFilename}`, {
+    method: "PUT",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({content})
+  });
+  if (res.ok) {
+    feedback.textContent = "Saved!";
+    loadEmails();
+  } else {
+    feedback.textContent = "Error saving";
+    feedback.style.color = "#d9534f";
+  }
+  setTimeout(() => { btn.disabled = false; }, 500);
+}
+
+document.getElementById("email-editor-overlay").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) closeEmailEditor();
+});
+
+// Init
+loadCommands();
+loadEmails();
+loadRuns();
+setInterval(loadRuns, 5000);
+
+// Close modal on overlay click
+document.getElementById("modal-overlay").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+// Close modal on Escape
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { closeModal(); closeEmailEditor(); }
+});
+</script>
+</body>
+</html>

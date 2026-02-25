@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <title>Screening CVs</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -11,7 +12,7 @@ header { background: #1a1a2e; color: #eee; padding: 12px 20px; font-size: 16px; 
 .layout { display: flex; flex: 1; overflow: hidden; }
 
 /* Left column — commands */
-.col-commands { width: 200px; min-width: 200px; background: #fff; border-right: 1px solid #ddd; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.col-commands { width: 280px; min-width: 280px; background: #fff; border-right: 1px solid #ddd; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
 .col-commands h3 { font-size: 13px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
 .cmd-btn { display: block; width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 6px; background: #fff; font-size: 13px; cursor: pointer; text-align: left; transition: background 0.15s; }
 .cmd-btn:hover { background: #e8f0fe; border-color: #4a90d9; }
@@ -79,18 +80,18 @@ header { background: #1a1a2e; color: #eee; padding: 12px 20px; font-size: 16px; 
 </style>
 </head>
 <body>
-<header>Screening CVs — Dashboard</header>
+<header><i class="fa-solid fa-users-viewfinder" style="margin-right: 8px;"></i>Screening CVs — Dashboard</header>
 <div class="layout">
   <div class="col-commands" style="overflow-y: auto;">
-    <h3>Commands</h3>
+    <h3><i class="fa-solid fa-terminal" style="margin-right: 6px;"></i>Commands</h3>
     <div id="commands"></div>
     <div class="emails-section">
-      <h3>Email Templates</h3>
+      <h3><i class="fa-solid fa-envelope-open-text" style="margin-right: 6px;"></i>Email Templates</h3>
       <div id="email-list"></div>
     </div>
   </div>
   <div class="col-runs">
-    <h3>Runs</h3>
+    <h3><i class="fa-solid fa-list-check" style="margin-right: 6px;"></i>Runs</h3>
     <table class="runs-table">
       <thead><tr><th>#</th><th>Command</th><th>Status</th><th>Started</th></tr></thead>
       <tbody id="runs-body"></tbody>
@@ -120,8 +121,8 @@ header { background: #1a1a2e; color: #eee; padding: 12px 20px; font-size: 16px; 
     <textarea id="email-editor-textarea"></textarea>
     <div class="modal-actions">
       <span class="save-feedback" id="email-save-feedback"></span>
-      <button class="btn btn-cancel" onclick="closeEmailEditor()">Close</button>
-      <button class="btn btn-save" id="email-save-btn" onclick="saveEmail()">Save</button>
+      <button class="btn btn-cancel" onclick="closeEmailEditor()"><i class="fa-solid fa-xmark" style="margin-right: 4px;"></i>Close</button>
+      <button class="btn btn-save" id="email-save-btn" onclick="saveEmail()"><i class="fa-solid fa-floppy-disk" style="margin-right: 4px;"></i>Save</button>
     </div>
   </div>
 </div>
@@ -131,8 +132,8 @@ header { background: #1a1a2e; color: #eee; padding: 12px 20px; font-size: 16px; 
     <h3 id="modal-title"></h3>
     <div id="modal-fields"></div>
     <div class="modal-actions">
-      <button class="btn btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-run" id="modal-run-btn">Run</button>
+      <button class="btn btn-cancel" onclick="closeModal()"><i class="fa-solid fa-xmark" style="margin-right: 4px;"></i>Cancel</button>
+      <button class="btn btn-run" id="modal-run-btn"><i class="fa-solid fa-play" style="margin-right: 4px;"></i>Run</button>
     </div>
   </div>
 </div>
@@ -153,7 +154,7 @@ async function loadCommands() {
   commands.forEach(cmd => {
     const btn = document.createElement("button");
     btn.className = "cmd-btn";
-    btn.textContent = cmd.name;
+    btn.innerHTML = (cmd.icon ? `<i class="fa-solid ${cmd.icon}" style="margin-right: 8px; width: 16px; text-align: center; color: #4a90d9;"></i>` : "") + cmd.name;
     btn.onclick = () => openModal(cmd);
     el.appendChild(btn);
   });
@@ -355,7 +356,7 @@ async function loadEmails() {
   emails.forEach(em => {
     const btn = document.createElement("button");
     btn.className = "email-btn";
-    btn.textContent = em.filename.replace(/_/g, " ").replace(".txt", "");
+    btn.innerHTML = `<i class="fa-solid fa-file-pen" style="margin-right: 8px; color: #e8a735;"></i>` + em.filename.replace(/_/g, " ").replace(".txt", "");
     btn.title = em.filename;
     btn.onclick = () => openEmailEditor(em.filename, em.content);
     el.appendChild(btn);

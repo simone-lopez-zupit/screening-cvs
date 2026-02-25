@@ -2,18 +2,21 @@ COMMANDS = [
     {
         "id": "screening_cvs",
         "name": "Screen CVs",
+        "icon": "fa-file-lines",
         "script": "screening_cvs.py",
         "inputs": [],
     },
     {
         "id": "find_duplicate_cvs",
         "name": "Find Duplicate CVs",
+        "icon": "fa-copy",
         "script": "find_duplicate_cvs.py",
         "inputs": [],
     },
     {
         "id": "process_test_results",
         "name": "Process Test Results",
+        "icon": "fa-clipboard-check",
         "script": "process_test_results.py",
         "inputs": [
             {
@@ -34,6 +37,7 @@ COMMANDS = [
     {
         "id": "sync_gmail",
         "name": "Sync Gmail",
+        "icon": "fa-envelope",
         "script": "sync_gmail_to_manatal.py",
         "inputs": [
             {
@@ -48,6 +52,7 @@ COMMANDS = [
     {
         "id": "drop_candidates",
         "name": "Drop Candidates",
+        "icon": "fa-user-xmark",
         "script": "drop_candidates.py",
         "inputs": [
             {
@@ -67,6 +72,7 @@ COMMANDS = [
     {
         "id": "drop_from_board",
         "name": "Drop from Board",
+        "icon": "fa-arrow-right-from-bracket",
         "script": "drop_from_board.py",
         "inputs": [
             {
@@ -92,6 +98,7 @@ COMMANDS = [
     {
         "id": "export_funnel",
         "name": "Export Funnel",
+        "icon": "fa-chart-funnel",
         "script": "export_funnel_stats.py",
         "inputs": [
             {
@@ -106,6 +113,7 @@ COMMANDS = [
     {
         "id": "check_manatal",
         "name": "Check Manatal",
+        "icon": "fa-circle-check",
         "script": "check_manatal.py",
         "inputs": [],
     },

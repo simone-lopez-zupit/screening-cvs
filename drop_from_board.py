@@ -14,9 +14,10 @@ from services.manatal_service import (
 load_dotenv()
 
 # ── Configuration ─────────────────────────────────────────────────────
-SOURCE_JOB_ID = "3301964"
-TARGET_JOB_ID = "303943"
-STAGE_NAME = "Da droppare"
+import os
+SOURCE_JOB_ID = os.getenv("SCREENING_PARAM_SOURCE_JOB_ID", "3301964")
+TARGET_JOB_ID = os.getenv("SCREENING_PARAM_TARGET_JOB_ID", "303943")
+STAGE_NAME = os.getenv("SCREENING_PARAM_STAGE_NAME", "Da droppare")
 SLEEP_SECONDS = 2
 
 

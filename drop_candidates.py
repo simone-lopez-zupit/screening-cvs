@@ -20,8 +20,8 @@ EMAIL_BODY_FILE = os.getenv("DROP_EMAIL_BODY_FILE")
 SLEEP_SECONDS = 65
 
 # ── Toggle which boards to drop ──────────────────────────────────
-DROP_TL = False
-DROP_DEV = True
+DROP_TL = os.getenv("SCREENING_PARAM_DROP_TL", "false").lower() == "true"
+DROP_DEV = os.getenv("SCREENING_PARAM_DROP_DEV", "true").lower() == "true"
 # ──────────────────────────────────────────────────────────────────
 
 

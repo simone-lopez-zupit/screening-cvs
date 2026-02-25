@@ -32,11 +32,12 @@ load_dotenv()
 # ── Configuration ─────────────────────────────────────────────────────
 EMAIL_DROP_BODY_FILE = os.getenv("DROP_EMAIL_BODY_FILE")
 EMAIL_CHIACCHIERATA_BODY_FILE = os.getenv("SEND_CHIACCHIERATA_EMAIL_BODY_FILE")
-NON_FARE_COSE = True
+NON_FARE_COSE = os.getenv("SCREENING_PARAM_NON_FARE_COSE", "true").lower() == "true"
 SLEEP_SECONDS = 85
 
 # ── Toggle which boards to process ───────────────────────────────
-BOARD_ORDER = ["DEV", "TL"]
+import json as _json
+BOARD_ORDER = _json.loads(os.getenv("SCREENING_PARAM_BOARD_ORDER", '["DEV", "TL"]'))
 # ──────────────────────────────────────────────────────────────────
 
 

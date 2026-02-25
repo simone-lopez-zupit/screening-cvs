@@ -11,7 +11,7 @@ from config.boards import BOARDS
 from services.manatal_service import build_headers, get_all_matches, _format_date_italian
 
 # ── Change this to switch board ───────────────────────────────────
-BOARD = "DEV"
+BOARD = os.getenv("SCREENING_PARAM_BOARD", "DEV")
 # ──────────────────────────────────────────────────────────────────
 
 OUTPUT_FIELDS = [

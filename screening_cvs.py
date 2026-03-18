@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 from services.file_utils import hash_file
 from services.manatal_service import build_headers, get_candidate_info
-from find_duplicate_cvs import find_duplicates_by_hash, find_duplicates_by_email
+from find_duplicate_cvs import find_duplicates_by_hash
 
 
 load_dotenv()
@@ -34,9 +34,20 @@ LIMIT = None
 # ──────────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = (
-    "Sei un assistente che esegue OCR e parsing di CV. "
-    "Analizza il PDF allegato e restituisci SOLO un oggetto JSON conforme allo schema richiesto. "
-    "Estrai solo i fatti, non valutare. Non aggiungere testo fuori dal JSON."
+    "Sei un assistente specializzato nell’elaborazione OCR e nel parsing di CV in formato PDF.\n"
+    "Il tuo compito è leggere, interpretare e strutturare le informazioni presenti nel CV.\n"
+    "Non aggiungere testo al di fuori dell’oggetto JSON.\n"
+    "Non inventare o derivare dati che non sono esplicitamente presenti.\n"
+    "Se un’informazione non è chiaramente indicata, lascia "" (stringa vuota) o null (per valori numerici).\n"
+    "----------\n"
+    "## FORMATO DATA E PERMANENZA (OBBLIGATORIO)\n"
+    "Converti SEMPRE i periodi in anni decimali:\n"
+    "- '2019-presente', '2019-oggi' → 2019-2026 = 7.0 anni\n"  
+    "- '2021-attualmente' → 2021-2026 = 5.0 anni\n"
+    "- 'Gennaio 2020 - presente' → 2020-2026 = 6.2 anni\n"
+    "- Periodo singolo → 1.0 anno\n"
+    "- Somma periodi multipli per stessa azienda\n"
+    "----------\n"
 )
 
 USER_PROMPT = (
@@ -59,7 +70,7 @@ USER_PROMPT = (
     "- Percorso di formazione: lista di istituti/scuole/bootcamp con tipo (università, bootcamp, corso online, ecc.)\n"
     "- Esperienze lavorative: lista di aziende con anni di permanenza\n"
     "Se un dato non é ricavabile lascia la stringa vuota o null.\n"
-    "\n"
+    "----------\n"
     "Restituisci un oggetto JSON con questa struttura:\n"
     "{\n"
     '  "full_name": "",\n'
@@ -135,7 +146,7 @@ CONDITION_KEYS = ["eta", "boolean", "accenture", "italiano"]
 
 BOOTCAMP_NAMES = {
     "boolean careers", "boolean", "epicode", "42 school", "42",
-    "start2impact", "develhope", "aulab", "ironhack", "le wagon",
+    "start2impact", "develhope", "aulab", "ironhack", "le wagon", "digichamps",
 }
 
 CONSULTING_FIRMS = {
@@ -145,7 +156,7 @@ CONSULTING_FIRMS = {
 
 
 def evaluate_eta(raw: Dict[str, Any]) -> tuple:
-    """Età: FALSE se > 45 anni, TRUE se <= 45, NULL se non determinabile."""
+    """Età: FALSE se >= 45 anni, TRUE se < 45, NULL se non determinabile."""
     birth_year = raw.get("birth_year")
     if birth_year is None:
         return "NULL", "Anno di nascita non presente nel CV."
@@ -155,9 +166,9 @@ def evaluate_eta(raw: Dict[str, Any]) -> tuple:
         return "NULL", f"Anno di nascita non valido: {birth_year}"
     current_year = datetime.now().year
     age = current_year - birth_year
-    if age > 45:
-        return "FALSE", f"Nato nel {birth_year}, età stimata {age} (> 45)."
-    return "TRUE", f"Nato nel {birth_year}, età stimata {age} (<= 45)."
+    if age >= 45:
+        return "FALSE", f"Nato nel {birth_year}, età stimata {age} (>= 45)."
+    return "TRUE", f"Nato nel {birth_year}, età stimata {age} (< 45)."
 
 
 def evaluate_boolean(raw: Dict[str, Any]) -> tuple:
@@ -301,6 +312,7 @@ OUTPUT_FIELDS = [
     "manatal_stage",
     "manatal_is_dropped",
     "manatal_drop_date",
+    "is_duplicate",
     "note",
 ]
 
@@ -336,12 +348,48 @@ def create_zip(zip_path: Path, files: List[Path]) -> None:
                 zf.write(file_path, arcname=file_path.name)
 
 
+def _build_processed_filenames(processed_dir: Path) -> set:
+    """Collect all PDF filenames from cvs_processed/ for duplicate detection."""
+    names = set()
+    if processed_dir.is_dir():
+        for pdf in processed_dir.rglob("*.pdf"):
+            names.add(pdf.name)
+    return names
+
+
+DUPLICATE_CUTOFF = "2026-01-01"
+
+ROLE_KEYWORDS = {
+    "TL": "TL",
+    "Jun Dev": "Jun Dev",
+    "Jun Mid": "Mid Dev",
+    "Jun Sen": "Sen Dev",
+    "DEV Sen": "Sen Dev",
+    "DEV Mid": "Mid Dev",
+    "DEV Jun": "Jun Dev",
+}
+
+
+def _detect_role(subfolder: Path) -> str:
+    """Detect the role from the first CV filename in the subfolder."""
+    first_pdf = next((p for p in sorted(subfolder.iterdir()) if p.suffix.lower() == ".pdf"), None)
+    if not first_pdf:
+        return ""
+    name = first_pdf.name
+    # Filenames follow "CV - <ROLE> - ..." pattern
+    for keyword, role in ROLE_KEYWORDS.items():
+        if f"- {keyword} -" in name or f"- {keyword} " in name:
+            return role
+    return ""
+
+
 def process_directory(
     headers: Dict[str, str],
     input_dir: Path,
     model: str,
     pause: float,
     limit: Optional[int],
+    processed_filenames: set = None,
 ) -> List[Dict[str, str]]:
     files = sorted(p for p in input_dir.iterdir() if p.suffix.lower() == ".pdf")
     if limit is not None:
@@ -362,8 +410,9 @@ def process_directory(
             data = sanitize_fields({})
 
         cand_email = raw.get("email")
+        created_at = None
         if cand_email:
-            manatal_link, match_details = get_candidate_info(headers, cand_email)
+            manatal_link, match_details, created_at = get_candidate_info(headers, cand_email)
         else:
             manatal_link, match_details = "", []
 
@@ -371,6 +420,13 @@ def process_directory(
         manatal_stages = "\n".join(m["stage"] for m in match_details) if match_details else ""
         manatal_dropped = "\n".join(str(m["is_dropped"]) for m in match_details) if match_details else ""
         manatal_drop_dates = "\n".join(m["drop_date"] for m in match_details) if match_details else ""
+
+        # ── Duplicate detection ──────────────────────────────────────
+        is_duplicate = False
+        if created_at and created_at[:10] >= DUPLICATE_CUTOFF:
+            is_duplicate = True
+        if processed_filenames and pdf_path.name in processed_filenames:
+            is_duplicate = True
 
         row = {
             "file_name": pdf_path.name,
@@ -380,6 +436,7 @@ def process_directory(
             "manatal_stage": manatal_stages,
             "manatal_is_dropped": manatal_dropped,
             "manatal_drop_date": manatal_drop_dates,
+            "is_duplicate": is_duplicate,
             "note": note,
         }
         rows.append(row)
@@ -396,42 +453,43 @@ def main() -> None:
     if not input_dir.is_dir():
         raise SystemExit(f"Cartella di input non trovata: {input_dir}")
 
-    # ── Cross-folder duplicate detection ──────────────────────────────
-    print("=== Controllo duplicati tra sottocartelle ===\n")
+    # ── Cross-folder duplicate detection (grouped by role) ─────────────
+    subfolders = sorted(p for p in input_dir.iterdir() if p.is_dir() and p.name != "cvs_processed")
+    role_groups: Dict[str, List[Path]] = {}
+    for sf in subfolders:
+        role = _detect_role(sf)
+        role_groups.setdefault(role, []).append(sf)
 
-    hash_dups = find_duplicates_by_hash(input_dir)
-    if hash_dups:
-        print(f"\n{len(hash_dups)} CV identici (stesso file) in più cartelle:\n")
-        for paths in hash_dups.values():
-            print(f"  {paths[0].name}")
-            for p in paths:
-                print(f"    - {p.parent.name}")
-            print()
+    print("=== Controllo duplicati tra sottocartelle (per ruolo) ===\n")
+    any_dups = False
+    for role, folders in role_groups.items():
+        if len(folders) < 2:
+            continue
+        hash_dups = find_duplicates_by_hash(input_dir, folders=folders)
+        if hash_dups:
+            any_dups = True
+            label = role or "sconosciuto"
+            print(f"{len(hash_dups)} CV identici ({label}) in più cartelle:\n")
+            for paths in hash_dups.values():
+                print(f"  {paths[0].name}")
+                for p in paths:
+                    print(f"    - {p.parent.name}")
+                print()
 
-    print("\nEstrazione email dai CV...\n")
-    email_dups = find_duplicates_by_email(input_dir)
-    if email_dups:
-        print(f"\n{len(email_dups)} persone con CV in più cartelle (stessa email):\n")
-        for email, paths in email_dups.items():
-            print(f"  {email}")
-            for p in paths:
-                print(f"    - {p.parent.name}/{p.name}")
-            print()
-
-    if not hash_dups and not email_dups:
+    if not any_dups:
         print("Nessun CV duplicato trovato tra le sottocartelle.\n")
-
-    # ── Process each subfolder ────────────────────────────────────────
-    subfolders = sorted(p for p in input_dir.iterdir() if p.is_dir())
     if not subfolders:
         raise SystemExit(f"Nessuna sottocartella trovata in: {input_dir}")
 
     headers = build_headers()
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    processed_filenames = _build_processed_filenames(input_dir / "cvs_processed")
 
     for subfolder in subfolders:
+        role = _detect_role(subfolder)
+        role_prefix = f"{role}_" if role else ""
         print(f"\n{'='*60}")
-        print(f"=== Screening: {subfolder.name} ===")
+        print(f"=== Screening: {role_prefix}{subfolder.name} ===")
         print(f"{'='*60}\n")
 
         # Dedup within subfolder
@@ -454,33 +512,53 @@ def main() -> None:
             model=MODEL,
             pause=PAUSE,
             limit=LIMIT,
+            processed_filenames=processed_filenames,
         )
 
-        output_dir = Path(f"output_{subfolder.name}_{timestamp_str}")
+        output_dir = Path(f"output_{role_prefix}{subfolder.name}_{timestamp_str}")
         output_dir.mkdir(exist_ok=True)
 
-        excel_path = output_dir / f"cv_{subfolder.name}_{timestamp_str}.xlsx"
+        excel_path = output_dir / f"cv_{role_prefix}{subfolder.name}_{timestamp_str}.xlsx"
         write_rows_to_excel(rows, output_path=excel_path, headers=OUTPUT_FIELDS)
         print(f"Excel salvato in: {excel_path}")
 
         accepted_files: List[Path] = []
         rejected_files: List[Path] = []
+        duplicate_files: List[Path] = []
 
         for row in rows:
-            decision = (row.get("decision") or "").upper()
             pdf_path = subfolder / row.get("file_name", "")
+            if row.get("is_duplicate"):
+                duplicate_files.append(pdf_path)
+                continue
+            decision = (row.get("decision") or "").upper()
             if decision == "ACCETTATO":
                 accepted_files.append(pdf_path)
             elif decision == "RIFIUTATO":
                 rejected_files.append(pdf_path)
 
-        zip_accept_path = output_dir / f"cv_approvati_{subfolder.name}_{timestamp_str}.zip"
-        zip_reject_path = output_dir / f"cv_rifiutati_{subfolder.name}_{timestamp_str}.zip"
+        # Move duplicate CVs to dedicated folder
+        if duplicate_files:
+            dup_dir = output_dir / "cv_duplicati"
+            dup_dir.mkdir(exist_ok=True)
+            for dup_path in duplicate_files:
+                if dup_path.exists():
+                    shutil.move(str(dup_path), str(dup_dir / dup_path.name))
+            print(f"Duplicati spostati in: {dup_dir} ({len(duplicate_files)} file)")
+
+        zip_accept_path = output_dir / f"cv_approvati_{role_prefix}{subfolder.name}_{timestamp_str}.zip"
+        zip_reject_path = output_dir / f"cv_rifiutati_{role_prefix}{subfolder.name}_{timestamp_str}.zip"
         create_zip(zip_accept_path, accepted_files)
         create_zip(zip_reject_path, rejected_files)
         print(f"Zip ACCETTATI: {zip_accept_path}")
         print(f"Zip RIFIUTATI: {zip_reject_path}")
         print(f"\nOutput in: {output_dir}")
+
+        # Move processed subfolder to cvs_processed
+        processed_dest = input_dir / "cvs_processed" / subfolder.name
+        (input_dir / "cvs_processed").mkdir(parents=True, exist_ok=True)
+        shutil.move(str(subfolder), str(processed_dest))
+        print(f"Cartella spostata in: {processed_dest}")
 
 
 if __name__ == "__main__":

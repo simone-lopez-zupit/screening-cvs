@@ -17,12 +17,12 @@ load_dotenv()
 
 # ── Configuration ─────────────────────────────────────────────────────
 EMAIL_BODY_FILE = os.getenv("DROP_EMAIL_BODY_FILE")
-SLEEP_SECONDS = 65
+SLEEP_SECONDS = 31
 
 # ── Toggle which boards to drop ──────────────────────────────────
-DROP_TL = os.getenv("SCREENING_PARAM_BOARD_TL", "true").lower() == "true"
-DROP_DEV = os.getenv("SCREENING_PARAM_BOARD_DEV", "true").lower() == "true"
-STAGE_KEY = os.getenv("SCREENING_PARAM_STAGE_NAME", "nuova_candidatura")
+DROP_TL = True
+DROP_DEV = False
+STAGE_KEY = "nuova_candidatura"
 # ──────────────────────────────────────────────────────────────────
 
 

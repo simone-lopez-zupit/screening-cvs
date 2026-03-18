@@ -28,6 +28,11 @@ def _format_date_italian(iso_date: str) -> str:
 
 NOTE_TAG = "[GMAIL_SYNC]"
 
+
+def is_dropped(match: dict) -> bool:
+    """A match is dropped when its is_active flag is false."""
+    return not match["is_active"]
+
 def _get_api_key() -> str:
     return os.getenv("MANATAL_API_KEY", "")
 
@@ -116,7 +121,7 @@ def fetch_job_matches(
                 continue
             if stage_name and str(stage.get("name") or "").strip().lower() != stage_name.strip().lower():
                 continue
-            if only_active and match.get("is_active", False):
+            if only_active and is_dropped(match):
                 continue
             matches.append(match)
         url = absolute_url(data.get("next"))
@@ -202,9 +207,9 @@ def get_candidate_info(headers: Dict[str, str], email: str):
     base_link = "app.manatal.com/candidates/"
 
     if len(candidates) == 0:
-        return "", []
+        return "", [], None
     if len(candidates) > 1:
-        return "SISTEMARE", []
+        return "SISTEMARE", [], None
 
     cand_id = candidates[0].get("id")
     url_matches: Optional[str] = f"{API_BASE}/candidates/{cand_id}/matches/"
@@ -215,10 +220,9 @@ def get_candidate_info(headers: Dict[str, str], email: str):
     job_cache = {}
     for m in matches:
         stage = m.get("stage") or {}
-        is_active = m.get("is_active", True)
-        is_dropped = not is_active
+        dropped = is_dropped(m)
         drop_date = ""
-        if is_dropped:
+        if dropped:
             drop_date = _format_date_italian((m.get("updated_at") or "")[:10])
 
         job_name = ""
@@ -236,11 +240,12 @@ def get_candidate_info(headers: Dict[str, str], email: str):
         match_details.append({
             "job": job_name,
             "stage": stage.get("name", ""),
-            "is_dropped": is_dropped,
+            "is_dropped": dropped,
             "drop_date": drop_date,
         })
 
-    return f"=HYPERLINK(\"{base_link}{cand_id}\")", match_details
+    created_at = candidates[0].get("created_at")
+    return f"=HYPERLINK(\"{base_link}{cand_id}\")", match_details, created_at
 
 
 # ── Match mutations ──────────────────────────────────────────────────

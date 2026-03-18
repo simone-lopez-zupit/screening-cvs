@@ -89,12 +89,12 @@ def find_duplicates_by_email(parent: Path) -> dict[str, list[Path]]:
     }
 
 
-def find_duplicates_by_hash(parent: Path) -> dict[str, list[Path]]:
+def find_duplicates_by_hash(parent: Path, folders: list[Path] | None = None) -> dict[str, list[Path]]:
     """Return hash -> list of PDF paths that appear in more than one subfolder."""
     hashes: dict[str, list[Path]] = defaultdict(list)
-    for subfolder in sorted(parent.iterdir()):
-        if not subfolder.is_dir():
-            continue
+    if folders is None:
+        folders = sorted(p for p in parent.iterdir() if p.is_dir())
+    for subfolder in folders:
         for pdf in sorted(subfolder.glob("*.pdf")):
             hashes[hash_file(pdf)].append(pdf)
 
